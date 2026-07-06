@@ -1,7 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from '../db/connection';
-import { users, tenants } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { mapUuidToShortId } from '../db/mock-db';
 import { getRoleConfig } from '../middleware/rbac';
@@ -17,6 +16,20 @@ declare module 'fastify' {
 interface LoginBody {
   email: string;
   password: string;
+}
+
+interface AuthUserRow {
+  [key: string]: unknown;  // Required for Drizzle execute<T> constraint
+  user_id: string;
+  tenant_id: string;
+  password_hash: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  tier: number;
+  subdomain: string;
+  is_active: boolean;
+  tenant_display_name: string;
 }
 
 export async function authRoutes(fastify: FastifyInstance) {
@@ -38,18 +51,15 @@ export async function authRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest<{ Body: LoginBody }>, reply: FastifyReply) => {
       const { email, password } = request.body;
 
-      // 1. Query PostgreSQL for user + tenant details
-      const [dbUser] = await db
-        .select({
-          user: users,
-          tenant: tenants,
-        })
-        .from(users)
-        .innerJoin(tenants, eq(users.tenantId, tenants.id))
-        .where(eq(users.email, email))
-        .limit(1);
+      // 1. Call SECURITY DEFINER function — the ONLY sanctioned RLS bypass.
+      //    authenticate_user() runs as postgres (schema owner), bypassing RLS only
+      //    for this single-row email lookup before tenant context is known.
+      const result = await db.execute<AuthUserRow>(
+        sql`SELECT * FROM authenticate_user(${email})`
+      );
+      const dbUser = result.rows[0] as AuthUserRow | undefined;
 
-      if (!dbUser || !dbUser.user.isActive) {
+      if (!dbUser || !dbUser.is_active) {
         return reply.status(401).send({
           success: false,
           error: 'Invalid email or password',
@@ -57,7 +67,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
 
       // 2. Compare password hashes via bcrypt
-      const isMatch = await bcrypt.compare(password, dbUser.user.passwordHash);
+      const isMatch = await bcrypt.compare(password, dbUser.password_hash);
       if (!isMatch) {
         return reply.status(401).send({
           success: false,
@@ -65,21 +75,19 @@ export async function authRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const user = dbUser.user;
-      const tenant = dbUser.tenant;
-      const shortUserId = mapUuidToShortId(user.id)!;
-      const roleConfig = getRoleConfig(user.role as any);
+      const shortUserId = mapUuidToShortId(dbUser.user_id)!;
+      const roleConfig = getRoleConfig(dbUser.role as any);
 
       const token = fastify.jwt.sign(
         {
           sub: shortUserId,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          role: user.role,
-          tier: user.tier,
-          tenantId: tenant.id,
-          tenantName: tenant.displayName,
-          subdomain: user.subdomain,
+          email,
+          name: `${dbUser.first_name} ${dbUser.last_name}`,
+          role: dbUser.role,
+          tier: dbUser.tier,
+          tenantId: dbUser.tenant_id,
+          tenantName: dbUser.tenant_display_name,
+          subdomain: dbUser.subdomain,
         },
         { expiresIn: '8h' }
       );
@@ -89,13 +97,13 @@ export async function authRoutes(fastify: FastifyInstance) {
         token,
         user: {
           id: shortUserId,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          role: user.role,
-          tier: user.tier,
-          tenantId: tenant.id,
-          tenantName: tenant.displayName,
-          subdomain: user.subdomain,
+          email,
+          name: `${dbUser.first_name} ${dbUser.last_name}`,
+          role: dbUser.role,
+          tier: dbUser.tier,
+          tenantId: dbUser.tenant_id,
+          tenantName: dbUser.tenant_display_name,
+          subdomain: dbUser.subdomain,
           dashboardPath: roleConfig.dashboardPath,
           menus: roleConfig.menus,
           roleLabel: roleConfig.label,
@@ -113,33 +121,27 @@ export async function authRoutes(fastify: FastifyInstance) {
     },
     async (request: any, reply: FastifyReply) => {
       const email = request.user.email;
-      const [dbUser] = await db
-        .select({
-          user: users,
-          tenant: tenants,
-        })
-        .from(users)
-        .innerJoin(tenants, eq(users.tenantId, tenants.id))
-        .where(eq(users.email, email))
-        .limit(1);
+      // Use the same SECURITY DEFINER function so /me also works under RLS
+      const result = await db.execute<AuthUserRow>(
+        sql`SELECT * FROM authenticate_user(${email})`
+      );
+      const dbUser = result.rows[0] as AuthUserRow | undefined;
 
       if (!dbUser) return reply.status(404).send({ error: 'User not found' });
-      
-      const user = dbUser.user;
-      const tenant = dbUser.tenant;
-      const shortUserId = mapUuidToShortId(user.id)!;
-      const roleConfig = getRoleConfig(user.role as any);
+
+      const shortUserId = mapUuidToShortId(dbUser.user_id)!;
+      const roleConfig = getRoleConfig(dbUser.role as any);
 
       return reply.send({
         success: true,
         user: {
           id: shortUserId,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          role: user.role,
-          tier: user.tier,
-          tenantId: tenant.id,
-          tenantName: tenant.displayName,
+          email,
+          name: `${dbUser.first_name} ${dbUser.last_name}`,
+          role: dbUser.role,
+          tier: dbUser.tier,
+          tenantId: dbUser.tenant_id,
+          tenantName: dbUser.tenant_display_name,
           dashboardPath: roleConfig.dashboardPath,
           menus: roleConfig.menus,
           roleLabel: roleConfig.label,
