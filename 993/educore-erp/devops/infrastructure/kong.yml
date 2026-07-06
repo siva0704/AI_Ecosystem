@@ -1,0 +1,62 @@
+_format_version: "3.0"
+_info:
+  select_tags:
+    - educore
+
+services:
+  - name: api-gateway-bff
+    url: http://api-gateway:4000
+    routes:
+      - name: auth-routes
+        paths:
+          - /api/auth
+      - name: student-routes
+        paths:
+          - /api/students
+      - name: dashboard-routes
+        paths:
+          - /api/dashboard
+      - name: attendance-routes
+        paths:
+          - /api/attendance
+      - name: fees-routes
+        paths:
+          - /api/fees
+      - name: library-routes
+        paths:
+          - /api/library
+      - name: staff-routes
+        paths:
+          - /api/staff
+      - name: info-route
+        paths:
+          - /api/info
+      - name: health-route
+        paths:
+          - /health
+
+plugins:
+  - name: cors
+    config:
+      origins:
+        - http://localhost:3000
+        - http://localhost:3001
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - Authorization
+      exposed_headers:
+        - Authorization
+      credentials: true
+      max_age: 3600

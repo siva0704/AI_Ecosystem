@@ -11,6 +11,8 @@ import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
+import fs from 'fs';
+import path from 'path';
 
 import { authRoutes } from './routes/auth';
 import { dashboardRoutes } from './routes/dashboard';
@@ -58,14 +60,25 @@ fastify.register(cors, {
 });
 
 // ─── JWT ─────────────────────────────────────────────────────────────────────
-const jwtSecret = process.env.JWT_SECRET || 'educore-dev-secret-change-this-in-production-use-vault';
-if (process.env.NODE_ENV === 'production' && jwtSecret.includes('dev')) {
-  throw new Error('FATAL: JWT_SECRET must be changed in production! Use HashiCorp Vault.');
+// The architectural specification mandates RS256 asymmetric cryptography.
+// In production, these should be loaded from HashiCorp Vault.
+let privateKey, publicKey;
+try {
+  privateKey = fs.readFileSync(path.join(__dirname, '../keys/jwtRS256.key'), 'utf8');
+  publicKey = fs.readFileSync(path.join(__dirname, '../keys/jwtRS256.key.pub'), 'utf8');
+} catch (err) {
+  console.warn('WARN: RS256 keys not found in keys/. Run `node generate-keys.js`.');
+  // Fallback for dev if keys are missing (should not happen in prod)
+  privateKey = 'fallback';
+  publicKey = 'fallback';
 }
 
 fastify.register(jwt, {
-  secret: jwtSecret,
-  sign: { algorithm: 'HS256' },
+  secret: {
+    private: privateKey,
+    public: publicKey,
+  },
+  sign: { algorithm: 'RS256' },
 });
 
 // ─── Cookie Plugin (for httpOnly refresh tokens) ──────────────────────────────

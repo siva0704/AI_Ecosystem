@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # ─── API Gateway (Kong) ──────────────────────────────────────────────────────
+  kong:
+    image: kong:3.6.1-ubuntu
+    container_name: educore_kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+      - "8001:8001"
+    volumes:
+      - ./devops/infrastructure/kong.yml:/usr/local/kong/declarative/kong.yml
+    networks:
+      - educore_net
+    depends_on:
+      - api-gateway
+
+  # ─── Fastify BFF (Backend-For-Frontend) ──────────────────────────────────────
+  api-gateway:
+    build: 
+      context: ./backend/services/api-gateway
+      dockerfile: Dockerfile
+    container_name: educore_api_gateway
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - CORS_ORIGINS=http://localhost:3000
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4000:4000"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
+  # ─── Next.js Frontend ────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./frontend/apps/web
+      dockerfile: Dockerfile
+    container_name: educore_web
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE=http://localhost:8000
+    ports:
+      - "3000:3000"
+    networks:
+      - educore_net
+
+  # ─── Relational Database (PostgreSQL 17) ─────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: educore_postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=9902850039
+      - POSTGRES_DB=educore
+    ports:
+      - "5432:5432"
+    networks:
+      - educore_net
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # ─── In-Memory Cache (Valkey) ────────────────────────────────────────────────
+  valkey:
+    image: valkey/valkey:7.2-alpine
+    container_name: educore_valkey
+    ports:
+      - "6379:6379"
+    networks:
+      - educore_net
+
+networks:
+  educore_net:
+    driver: bridge
+
+volumes:
+  pgdata:
