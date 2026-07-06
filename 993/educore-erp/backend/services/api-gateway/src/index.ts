@@ -4,6 +4,7 @@
  * All routes are RBAC-protected. All data is tenant-scoped.
  * Compliant with CONTEXT.md security laws.
  */
+import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';

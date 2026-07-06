@@ -7,7 +7,7 @@
  */
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { rbacGuard } from '../middleware/guards';
-import { queryAttendance, appendAttendanceRecords, STUDENTS } from '../db/mock-db';
+import { queryAttendance, appendAttendanceRecords, queryStudents } from '../db/mock-db';
 import { AttendanceRecordSchema } from '../schemas/validation';
 import { Role } from '../db/demo-users';
 
@@ -20,12 +20,16 @@ export async function attendanceRoutes(fastify: FastifyInstance) {
       const user = (request as any).user;
       const { date, studentId } = request.query as { date?: string; studentId?: string };
 
-      // Students can only see their own attendance
-      const resolvedStudentId = user.tier >= 4
-        ? (STUDENTS.find((s) => s.parent_email === user.email || s.id === user.sub)?.id)
-        : studentId;
+      let resolvedStudentId = studentId;
 
-      const records = queryAttendance(user.tenantId, resolvedStudentId, date);
+      // Students can only see their own attendance
+      if (user.tier >= 4) {
+        const studentsList = await queryStudents(user.tenantId);
+        const ownStudent = studentsList.find((s) => s.parent_email === user.email || s.id === user.sub);
+        resolvedStudentId = ownStudent?.id;
+      }
+
+      const records = await queryAttendance(user.tenantId, resolvedStudentId, date);
       return reply.send({ success: true, data: records, count: records.length });
     }
   );
@@ -42,10 +46,11 @@ export async function attendanceRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'Validation failed', details: parsed.error.flatten() });
       }
 
-      // Check duplicate — can't mark the same student twice on the same date
       const { classId, date, records } = parsed.data;
-      const existing = queryAttendance(user.tenantId, undefined, date)
-        .filter((a) => a.class_id === classId);
+
+      // Check duplicate — can't mark the same student twice on the same date
+      const existingAll = await queryAttendance(user.tenantId, undefined, date);
+      const existing = existingAll.filter((a) => a.class_id === classId);
 
       if (existing.length > 0) {
         return reply.status(409).send({
@@ -55,9 +60,9 @@ export async function attendanceRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const added = appendAttendanceRecords(
+      const added = await appendAttendanceRecords(
+        user.tenantId,
         records.map((r) => ({
-          tenant_id: user.tenantId,
           class_id: classId,
           student_id: r.studentId,
           date,
@@ -89,7 +94,7 @@ export async function attendanceRoutes(fastify: FastifyInstance) {
     { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
-      const records = queryAttendance(user.tenantId);
+      const records = await queryAttendance(user.tenantId);
 
       // Group by student
       const summary: Record<string, { present: number; absent: number; late: number; excused: number; total: number }> = {};

@@ -8,10 +8,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### In Progress
-- Database schema (PostgreSQL 17 + Drizzle ORM + RLS policies)
-- Full CRUD API endpoints per domain
+- Full CRUD API endpoints per domain (Hostel, Transport remaining)
 - UI data-entry screens per role (attendance, fees, assignments, etc.)
 - GitHub Actions CI/CD pipeline
+
+---
+
+## [0.2.0-alpha] — 2026-07-06
+
+### Fixed
+- **Critical RLS Bug** — `SET LOCAL app.current_tenant_id = $1` syntax error in PostgreSQL.
+  PostgreSQL's `SET LOCAL` does not accept parameterized bind values (`$1`). 
+  Fixed by replacing with `SELECT set_config('app.current_tenant_id', $1, true)` which is
+  a regular SQL function supporting bind parameters (equivalent to `SET LOCAL` when `is_local=true`).
+
+### Added
+- **Live PostgreSQL 17 Integration** via Drizzle ORM + `withTenantContext()` wrapper:
+  - All API routes (students, staff, attendance, fees, library) now execute against live PostgreSQL
+  - RLS session variable set via `set_config()` inside every database transaction
+  - Async/await pattern throughout all Fastify route handlers
+- **UUID ↔ Short-ID Mapper** — `mapShortIdToUuid()` / `mapUuidToShortId()` for reconciling
+  developer-readable IDs (`stu-001`) with strict PostgreSQL UUID primary keys
+- **Database Migration + Seed Script** (`migrate-and-seed.ts`):
+  - Creates all core tables (tenants, users, students, staff, attendance, fees, library)
+  - Seeds 1 demo tenant (Greenfield Academy) and 13 demo users with bcrypt-hashed passwords
+  - Seeds 5 students, 3 staff, 5 library books, 3 fee transactions, 2 attendance records
+- **dotenv Integration** — `DATABASE_URL` loaded from `.env` before any DB connection code imports
+- **bcryptjs Authentication** — login compares password against hashed value from PostgreSQL
+- **Zero TypeScript Compilation Errors** — `npx tsc --noEmit` passes clean
 
 ---
 

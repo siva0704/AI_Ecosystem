@@ -4,7 +4,7 @@
  */
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { rbacGuard } from '../middleware/guards';
-import { queryLibraryBooks, LIBRARY_TRANSACTIONS, LIBRARY_BOOKS } from '../db/mock-db';
+import { queryLibraryBooks, queryLibraryTransactions, issueBook, returnBook } from '../db/mock-db';
 import { IssueBookSchema } from '../schemas/validation';
 import { Role } from '../db/demo-users';
 
@@ -16,7 +16,7 @@ export async function libraryRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
       const { search } = request.query as { search?: string };
-      const books = queryLibraryBooks(user.tenantId, search);
+      const books = await queryLibraryBooks(user.tenantId, search);
       return reply.send({ success: true, data: books, count: books.length });
     }
   );
@@ -27,7 +27,7 @@ export async function libraryRoutes(fastify: FastifyInstance) {
     { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
-      let transactions = LIBRARY_TRANSACTIONS.filter((t) => t.tenant_id === user.tenantId);
+      let transactions = await queryLibraryTransactions(user.tenantId);
 
       // Students see only their own
       if (user.tier >= 4) {
@@ -50,13 +50,14 @@ export async function libraryRoutes(fastify: FastifyInstance) {
       }
 
       const { bookId, studentId, dueDate } = parsed.data;
-      const book = LIBRARY_BOOKS.find((b) => b.id === bookId && b.tenant_id === user.tenantId);
+
+      // Verify book has available copies
+      const books = await queryLibraryBooks(user.tenantId);
+      const book = books.find((b) => b.id === bookId);
       if (!book) return reply.status(404).send({ success: false, error: 'Book not found' });
       if (book.available_copies <= 0) return reply.status(409).send({ success: false, error: 'No copies available' });
 
-      book.available_copies -= 1;
-      const txn = { id: `ltx-${Date.now()}`, tenant_id: user.tenantId, book_id: bookId, student_id: studentId, issued_by: user.sub, issued_at: new Date().toISOString(), due_date: dueDate, status: 'ISSUED' as const };
-      LIBRARY_TRANSACTIONS.push(txn);
+      const txn = await issueBook(user.tenantId, bookId, studentId, dueDate, user.sub);
 
       return reply.status(201).send({ success: true, data: txn, message: 'Book issued successfully' });
     }
@@ -70,17 +71,12 @@ export async function libraryRoutes(fastify: FastifyInstance) {
       const user = (request as any).user;
       const { txnId } = request.params as { txnId: string };
 
-      const txn = LIBRARY_TRANSACTIONS.find((t) => t.id === txnId && t.tenant_id === user.tenantId);
-      if (!txn) return reply.status(404).send({ success: false, error: 'Transaction not found' });
-      if (txn.status === 'RETURNED') return reply.status(409).send({ success: false, error: 'Book already returned' });
-
-      txn.returned_at = new Date().toISOString();
-      txn.status = 'RETURNED';
-
-      const book = LIBRARY_BOOKS.find((b) => b.id === txn.book_id && b.tenant_id === user.tenantId);
-      if (book) book.available_copies += 1;
-
-      return reply.send({ success: true, data: txn, message: 'Book returned successfully' });
+      try {
+        const txn = await returnBook(user.tenantId, txnId);
+        return reply.send({ success: true, data: txn, message: 'Book returned successfully' });
+      } catch (err: any) {
+        return reply.status(404).send({ success: false, error: err.message || 'Transaction not found' });
+      }
     }
   );
 }

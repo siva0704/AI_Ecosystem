@@ -8,12 +8,11 @@
  */
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { rbacGuard } from '../middleware/guards';
-import { queryFeeTransactions, appendFeeTransaction, STUDENTS } from '../db/mock-db';
+import { queryFeeTransactions, appendFeeTransaction, queryStudents } from '../db/mock-db';
 import { InitiateFeePaymentSchema } from '../schemas/validation';
 import { Role } from '../db/demo-users';
 
 // ⚠️ FEE STRUCTURES — Hand-coded, deterministic. NEVER AI-generated. CONTEXT.md §1.1
-// In production these come from the fee_structures table, NOT from client payloads.
 const FEE_STRUCTURES: Record<string, { amount_paise: number; description: string }> = {
   'annual-tuition':  { amount_paise: 1250000, description: 'Annual Tuition Fee (₹12,500)' },
   'term-q1':        { amount_paise:  820000,  description: 'Term Fee Q1 (₹8,200)' },
@@ -35,13 +34,14 @@ export async function feeRoutes(fastify: FastifyInstance) {
 
       // Students and parents can only see their own fees
       if (user.tier >= 4) {
-        const ownStudent = STUDENTS.find(
+        const studentsList = await queryStudents(user.tenantId);
+        const ownStudent = studentsList.find(
           (s) => s.id === user.sub || s.parent_email === user.email
         );
         resolvedStudentId = ownStudent?.id;
       }
 
-      const transactions = queryFeeTransactions(user.tenantId, resolvedStudentId);
+      const transactions = await queryFeeTransactions(user.tenantId, resolvedStudentId);
 
       // Convert paise to rupees for display (display only — internal always paise)
       const formatted = transactions.map((t) => ({
@@ -85,10 +85,11 @@ export async function feeRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'Validation failed', details: parsed.error.flatten() });
       }
 
-      const { studentId, feeHeadId, paymentMode, notes } = parsed.data;
+      const { studentId, feeHeadId, paymentMode } = parsed.data;
 
       // Verify student exists in this tenant
-      const student = STUDENTS.find((s) => s.id === studentId && s.tenant_id === user.tenantId);
+      const studentsList = await queryStudents(user.tenantId);
+      const student = studentsList.find((s) => s.id === studentId);
       if (!student) {
         return reply.status(404).send({ success: false, error: 'Student not found in this institution' });
       }
@@ -100,8 +101,7 @@ export async function feeRoutes(fastify: FastifyInstance) {
       }
 
       // Append-only — creates a new PENDING transaction
-      const transaction = appendFeeTransaction({
-        tenant_id: user.tenantId,
+      const transaction = await appendFeeTransaction(user.tenantId, {
         student_id: studentId,
         fee_head: feeStructure.description,
         amount_paise: feeStructure.amount_paise, // Server-defined only

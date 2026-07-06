@@ -22,7 +22,7 @@ export async function staffRoutes(fastify: FastifyInstance) {
       }
 
       const { page, limit, search } = pagination.data;
-      const staff = queryStaff(user.tenantId, search);
+      const staff = await queryStaff(user.tenantId, search);
       const paginated = staff.slice((page - 1) * limit, page * limit);
 
       // DPDP: only HR can see phone/sensitive fields
@@ -60,12 +60,11 @@ export async function staffRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'Validation failed', details: parsed.error.flatten() });
       }
 
-      const staff = addStaff({
-        tenant_id: user.tenantId,
+      const staff = await addStaff(user.tenantId, {
         first_name: parsed.data.firstName,
         last_name: parsed.data.lastName,
         email: parsed.data.email,
-        phone: parsed.data.phone,
+        phone: parsed.data.phone || '',
         role: parsed.data.role,
         department: parsed.data.department,
         date_of_joining: parsed.data.dateOfJoining,

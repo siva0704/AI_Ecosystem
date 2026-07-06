@@ -6,10 +6,7 @@
  */
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { rbacGuard, tierGuard } from '../middleware/guards';
-import {
-  queryStudents, addStudent, STUDENTS,
-  Student
-} from '../db/mock-db';
+import { queryStudents, addStudent } from '../db/mock-db';
 import { CreateStudentSchema, PaginationSchema } from '../schemas/validation';
 
 export async function studentsRoutes(fastify: FastifyInstance) {
@@ -30,7 +27,7 @@ export async function studentsRoutes(fastify: FastifyInstance) {
       const { page, limit, search } = pagination.data;
 
       // RLS: always tenant-scoped
-      let students = queryStudents(user.tenantId, search);
+      let students = await queryStudents(user.tenantId, search);
 
       // Additional scope: students can only see themselves
       if (user.tier >= 4) {
@@ -70,7 +67,8 @@ export async function studentsRoutes(fastify: FastifyInstance) {
       const user = (request as any).user;
       const { id } = request.params as { id: string };
 
-      const student = STUDENTS.find((s) => s.id === id && s.tenant_id === user.tenantId);
+      const studentsList = await queryStudents(user.tenantId);
+      const student = studentsList.find((s) => s.id === id);
       if (!student) {
         return reply.status(404).send({ success: false, error: 'Student not found' });
       }
@@ -99,12 +97,11 @@ export async function studentsRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'Validation failed', details: parsed.error.flatten() });
       }
 
-      const student = addStudent({
-        tenant_id: user.tenantId,
+      const student = await addStudent(user.tenantId, {
         first_name: parsed.data.firstName,
         last_name: parsed.data.lastName,
         date_of_birth: parsed.data.dateOfBirth,
-        gender: parsed.data.gender,
+        gender: parsed.data.gender as any,
         grade: parsed.data.grade,
         section: parsed.data.section,
         roll_number: parsed.data.rollNumber,
