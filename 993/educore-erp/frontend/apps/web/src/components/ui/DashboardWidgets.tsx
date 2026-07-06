@@ -11,22 +11,22 @@ interface StatCardProps {
 }
 
 const COLOR_MAP = {
-  indigo: 'from-indigo-500/20 to-indigo-600/5 border-indigo-500/20 text-indigo-400',
-  green:  'from-green-500/20 to-green-600/5 border-green-500/20 text-green-400',
-  amber:  'from-amber-500/20 to-amber-600/5 border-amber-500/20 text-amber-400',
-  red:    'from-red-500/20 to-red-600/5 border-red-500/20 text-red-400',
-  purple: 'from-purple-500/20 to-purple-600/5 border-purple-500/20 text-purple-400',
-  cyan:   'from-cyan-500/20 to-cyan-600/5 border-cyan-500/20 text-cyan-400',
-  pink:   'from-pink-500/20 to-pink-600/5 border-pink-500/20 text-pink-400',
-  orange: 'from-orange-500/20 to-orange-600/5 border-orange-500/20 text-orange-400',
-  teal:   'from-teal-500/20 to-teal-600/5 border-teal-500/20 text-teal-400',
+  indigo: 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400',
+  green:  'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
+  amber:  'bg-amber-500/10 border-amber-500/20 text-amber-400',
+  red:    'bg-rose-500/10 border-rose-500/20 text-rose-400',
+  purple: 'bg-purple-500/10 border-purple-500/20 text-purple-400',
+  cyan:   'bg-cyan-500/10 border-cyan-500/20 text-cyan-400',
+  pink:   'bg-pink-500/10 border-pink-500/20 text-pink-400',
+  orange: 'bg-orange-500/10 border-orange-500/20 text-orange-400',
+  teal:   'bg-teal-500/10 border-teal-500/20 text-teal-400',
 };
 
 export function StatCard({ label, value, icon, trend, color = 'indigo' }: StatCardProps) {
   const colorClass = COLOR_MAP[color];
   return (
-    <div className={cn('rounded-2xl border bg-gradient-to-br p-5 transition hover:scale-[1.02]', colorClass)}>
-      <div className="flex items-start justify-between mb-3">
+    <div className={cn('rounded-2xl border bg-slate-900/50 p-5 transition hover:scale-[1.02]', colorClass)}>
+      <div className="flex items-center justify-between mb-4">
         <span className="text-2xl">{icon}</span>
         {trend && (
           <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', trend.positive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400')}>

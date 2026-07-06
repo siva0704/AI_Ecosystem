@@ -15,20 +15,20 @@ interface DemoUser {
   roleColor: string;
 }
 
-const ROLE_GRADIENT: Record<string, string> = {
-  SUPER_ADMIN:       'from-purple-600 to-purple-800',
-  INSTITUTION_ADMIN: 'from-indigo-600 to-indigo-800',
-  PRINCIPAL:         'from-blue-600 to-blue-800',
-  HOD:               'from-cyan-600 to-cyan-800',
-  TEACHER:           'from-green-600 to-green-800',
-  ACCOUNTANT:        'from-amber-600 to-amber-800',
-  HR_MANAGER:        'from-pink-600 to-pink-800',
-  TRANSPORT_OFFICER: 'from-orange-600 to-orange-800',
-  HOSTEL_WARDEN:     'from-teal-600 to-teal-800',
-  LIBRARIAN:         'from-violet-600 to-violet-800',
-  STUDENT:           'from-sky-600 to-sky-800',
-  PARENT:            'from-rose-600 to-rose-800',
-  AUDITOR:           'from-slate-600 to-slate-800',
+const ROLE_COLOR: Record<string, string> = {
+  SUPER_ADMIN:       'bg-indigo-700',
+  INSTITUTION_ADMIN: 'bg-slate-700',
+  PRINCIPAL:         'bg-blue-700',
+  HOD:               'bg-cyan-700',
+  TEACHER:           'bg-emerald-700',
+  ACCOUNTANT:        'bg-amber-700',
+  HR_MANAGER:        'bg-rose-700',
+  TRANSPORT_OFFICER: 'bg-orange-700',
+  HOSTEL_WARDEN:     'bg-teal-700',
+  LIBRARIAN:         'bg-violet-700',
+  STUDENT:           'bg-sky-700',
+  PARENT:            'bg-fuchsia-700',
+  AUDITOR:           'bg-slate-600',
 };
 
 const TIER_LABELS: Record<number, string> = {
@@ -89,10 +89,10 @@ export default function LoginPage() {
   const tiers = [...new Set(demoUsers.map((u) => u.tier))].sort();
 
   return (
-    <div className="min-h-screen bg-animated flex flex-col">
+    <div className="min-h-screen bg-[#020817] flex flex-col">
       {/* Header */}
       <header className="p-6 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg">
+        <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-lg">
           EC
         </div>
         <div>
@@ -109,9 +109,10 @@ export default function LoginPage() {
         {/* Login Card */}
         <div className="w-full max-w-md flex-shrink-0 fade-in-up">
           <div className="glass rounded-2xl p-8 glow-purple">
+            <div className="p-8 pb-10">
             {/* Logo area */}
             <div className="text-center mb-8">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-cyan-500 flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4 shadow-xl">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4 shadow-lg">
                 🎓
               </div>
               <h1 className="text-2xl font-bold text-white mb-1">EduCore ERP</h1>
@@ -157,7 +158,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-indigo-500/25"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
               >
                 {loading ? (
                   <>
@@ -180,6 +181,7 @@ export default function LoginPage() {
             >
               {showDemo ? '▲ Hide' : '▼ Show'} demo credentials panel
             </button>
+            </div>
           </div>
 
           {/* RBAC Info */}
@@ -245,7 +247,7 @@ export default function LoginPage() {
                         }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${ROLE_GRADIENT[u.role] || 'from-slate-600 to-slate-800'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+                        <div className={`w-8 h-8 rounded-lg ${ROLE_COLOR[u.role] || 'bg-slate-700'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
                           T{u.tier}
                         </div>
                         <div className="flex-1 min-w-0">

@@ -23,8 +23,9 @@ export function Sidebar() {
     <aside className={cn('w-64 flex-shrink-0 flex flex-col h-screen sticky top-0', theme.bg, 'border-r', theme.border)}>
       {/* Brand */}
       <div className="p-5 border-b border-white/5">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg">
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-2 mb-8">
+          <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
             EC
           </div>
           <div>

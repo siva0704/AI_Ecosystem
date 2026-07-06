@@ -13,7 +13,7 @@ html {
 }
 
 body {
-  background: #020817;
+  background: #020817; /* Solid deep slate */
   color: #e2e8f0;
   font-family: var(--font-inter);
 }
@@ -24,38 +24,28 @@ body {
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
-/* Gradient text utility */
+/* Solid primary text utility */
 .gradient-text {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  /* Renamed internally to keep compatibility if hard to find, but it's now solid */
+  color: #818cf8; /* indigo-400 */
 }
 
-/* Glass card */
+/* Glass card (simplified for professional look) */
 .glass {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(51, 65, 85, 0.5); /* solid slate-700 border */
 }
 
-/* Animated gradient background */
+/* Replaced animated background with solid dark slate */
 .bg-animated {
-  background: linear-gradient(135deg, #020817 0%, #0f172a 25%, #1e1b4b 50%, #0f172a 75%, #020817 100%);
-  background-size: 400% 400%;
-  animation: gradientShift 15s ease infinite;
+  background: #020617; /* slate-950 */
 }
 
-@keyframes gradientShift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-/* Glow effects */
-.glow-purple { box-shadow: 0 0 40px rgba(99, 102, 241, 0.15); }
-.glow-blue   { box-shadow: 0 0 40px rgba(59, 130, 246, 0.15); }
-.glow-cyan   { box-shadow: 0 0 40px rgba(6, 182, 212, 0.15); }
+/* Subtle Glow effects instead of bright colors */
+.glow-purple { box-shadow: 0 0 20px rgba(99, 102, 241, 0.05); }
+.glow-blue   { box-shadow: 0 0 20px rgba(59, 130, 246, 0.05); }
+.glow-cyan   { box-shadow: 0 0 20px rgba(6, 182, 212, 0.05); }
 
 /* Sidebar transition */
 .sidebar-item {
