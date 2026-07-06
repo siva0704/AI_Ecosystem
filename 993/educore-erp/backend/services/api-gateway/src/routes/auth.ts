@@ -1,8 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from '../db/connection';
-import { sql } from 'drizzle-orm';
+import { sql, eq, and } from 'drizzle-orm';
+import { refreshTokens } from '../db/schema';
 import bcrypt from 'bcryptjs';
-import { mapUuidToShortId } from '../db/mock-db';
+import crypto from 'crypto';
+import { mapUuidToShortId, mapShortIdToUuid } from '../db/mock-db';
 import { getRoleConfig } from '../middleware/rbac';
 import { DEMO_USERS } from '../db/demo-users';
 
@@ -32,8 +34,20 @@ interface AuthUserRow {
   tenant_display_name: string;
 }
 
+const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+const ACCESS_TOKEN_EXPIRY = '15m';
+const REFRESH_COOKIE_NAME = 'educore_refresh';
+
+function generateRefreshToken(): string {
+  return crypto.randomBytes(40).toString('hex');
+}
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 export async function authRoutes(fastify: FastifyInstance) {
-  // POST /api/auth/login
+  // ─── POST /api/auth/login ─────────────────────────────────────────────────
   fastify.post<{ Body: LoginBody }>(
     '/login',
     {
@@ -67,7 +81,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
 
       // 2. Compare password hashes via bcrypt
-      const isMatch = await bcrypt.compare(password, dbUser.password_hash);
+      const isMatch = await bcrypt.compare(password, dbUser.password_hash as string);
       if (!isMatch) {
         return reply.status(401).send({
           success: false,
@@ -75,10 +89,11 @@ export async function authRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const shortUserId = mapUuidToShortId(dbUser.user_id)!;
+      const shortUserId = mapUuidToShortId(dbUser.user_id as string)!;
       const roleConfig = getRoleConfig(dbUser.role as any);
 
-      const token = fastify.jwt.sign(
+      // 3. Issue short-lived access token (15m)
+      const accessToken = fastify.jwt.sign(
         {
           sub: shortUserId,
           email,
@@ -89,12 +104,37 @@ export async function authRoutes(fastify: FastifyInstance) {
           tenantName: dbUser.tenant_display_name,
           subdomain: dbUser.subdomain,
         },
-        { expiresIn: '8h' }
+        { expiresIn: ACCESS_TOKEN_EXPIRY }
       );
+
+      // 4. Issue long-lived refresh token (7d) — stored hashed in DB
+      const rawRefreshToken = generateRefreshToken();
+      const tokenHash = hashToken(rawRefreshToken);
+      const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+      const fullUserId = dbUser.user_id as string;
+
+      await db.insert(refreshTokens).values({
+        userId: fullUserId,
+        tenantId: dbUser.tenant_id as string,
+        tokenHash,
+        expiresAt,
+        userAgent: request.headers['user-agent']?.substring(0, 512) || null,
+        ipAddress: request.ip?.substring(0, 50) || null,
+      });
+
+      // 5. Set refresh token in httpOnly cookie (not accessible from JS)
+      reply.setCookie(REFRESH_COOKIE_NAME, rawRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',  // HTTPS only in prod
+        sameSite: 'strict',
+        path: '/api/auth',                              // Only sent to /api/auth/* endpoints
+        maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60,
+      });
 
       return reply.status(200).send({
         success: true,
-        token,
+        token: accessToken,                             // Short-lived (15m) — used in Authorization header
+        expiresIn: 900,                                 // 15 * 60 seconds
         user: {
           id: shortUserId,
           email,
@@ -113,7 +153,124 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // GET /api/auth/me — returns current user from token
+  // ─── POST /api/auth/refresh ───────────────────────────────────────────────
+  // Silently rotates access + refresh tokens using the httpOnly cookie.
+  // Called automatically by the frontend when an API request returns 401.
+  fastify.post('/refresh', async (request: FastifyRequest, reply: FastifyReply) => {
+    const rawToken = (request.cookies as any)?.[REFRESH_COOKIE_NAME];
+    if (!rawToken) {
+      return reply.status(401).send({ success: false, error: 'No refresh token', code: 'NO_REFRESH_TOKEN' });
+    }
+
+    const tokenHash = hashToken(rawToken);
+    const now = new Date();
+
+    // 1. Look up the refresh token record
+    const [record] = await db
+      .select()
+      .from(refreshTokens)
+      .where(
+        and(
+          eq(refreshTokens.tokenHash, tokenHash),
+          eq(refreshTokens.isRevoked, false)
+        )
+      )
+      .limit(1);
+
+    if (!record || record.expiresAt < now) {
+      // Clear the stale cookie
+      reply.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
+      return reply.status(401).send({ success: false, error: 'Refresh token expired or revoked', code: 'REFRESH_TOKEN_INVALID' });
+    }
+
+    // 2. Revoke the old refresh token (rotation — prevents replay attacks)
+    await db
+      .update(refreshTokens)
+      .set({ isRevoked: true, lastUsedAt: now })
+      .where(eq(refreshTokens.id, record.id));
+
+    // 3. Get user details via the SECURITY DEFINER function
+    const userRows = await db.execute<AuthUserRow>(
+      sql`SELECT u.user_id, u.tenant_id, u.first_name, u.last_name, u.email,
+               u.role, u.tier, u.subdomain, u.is_active, t.display_name as tenant_display_name
+          FROM users u
+          JOIN tenants t ON u.tenant_id = t.tenant_id
+          WHERE u.user_id = ${record.userId}`
+    );
+    const dbUser = userRows.rows[0] as AuthUserRow | undefined;
+
+    if (!dbUser || !dbUser.is_active) {
+      reply.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
+      return reply.status(401).send({ success: false, error: 'User not found or inactive', code: 'USER_INACTIVE' });
+    }
+
+    const shortUserId = mapUuidToShortId(dbUser.user_id as string)!;
+
+    // 4. Issue new 15m access token
+    const newAccessToken = fastify.jwt.sign(
+      {
+        sub: shortUserId,
+        email: dbUser.email,
+        name: `${dbUser.first_name} ${dbUser.last_name}`,
+        role: dbUser.role,
+        tier: dbUser.tier,
+        tenantId: dbUser.tenant_id,
+        tenantName: dbUser.tenant_display_name,
+        subdomain: dbUser.subdomain,
+      },
+      { expiresIn: ACCESS_TOKEN_EXPIRY }
+    );
+
+    // 5. Issue new 7d refresh token (rotation complete)
+    const newRawToken = generateRefreshToken();
+    const newTokenHash = hashToken(newRawToken);
+    const newExpiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+    await db.insert(refreshTokens).values({
+      userId: record.userId,
+      tenantId: record.tenantId,
+      tokenHash: newTokenHash,
+      expiresAt: newExpiresAt,
+      userAgent: request.headers['user-agent']?.substring(0, 512) || null,
+      ipAddress: request.ip?.substring(0, 50) || null,
+    });
+
+    reply.setCookie(REFRESH_COOKIE_NAME, newRawToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/api/auth',
+      maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60,
+    });
+
+    return reply.send({
+      success: true,
+      token: newAccessToken,
+      expiresIn: 900,
+    });
+  });
+
+  // ─── POST /api/auth/logout ────────────────────────────────────────────────
+  // Revokes all refresh tokens for the current user. Clears the cookie.
+  fastify.post(
+    '/logout',
+    { onRequest: [fastify.authenticate] },
+    async (request: any, reply: FastifyReply) => {
+      const rawToken = (request.cookies as any)?.[REFRESH_COOKIE_NAME];
+      if (rawToken) {
+        const tokenHash = hashToken(rawToken);
+        await db
+          .update(refreshTokens)
+          .set({ isRevoked: true })
+          .where(eq(refreshTokens.tokenHash, tokenHash));
+      }
+
+      reply.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
+      return reply.send({ success: true, message: 'Logged out successfully' });
+    }
+  );
+
+  // ─── GET /api/auth/me ─────────────────────────────────────────────────────
   fastify.get(
     '/me',
     {
@@ -129,7 +286,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
       if (!dbUser) return reply.status(404).send({ error: 'User not found' });
 
-      const shortUserId = mapUuidToShortId(dbUser.user_id)!;
+      const shortUserId = mapUuidToShortId(dbUser.user_id as string)!;
       const roleConfig = getRoleConfig(dbUser.role as any);
 
       return reply.send({
@@ -151,7 +308,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // GET /api/auth/demo-users — lists all demo credentials for the dev login panel
+  // ─── GET /api/auth/demo-users ─────────────────────────────────────────────
   fastify.get('/demo-users', async (_request: FastifyRequest, reply: FastifyReply) => {
     const usersList = DEMO_USERS.map((u) => ({
       email: u.email,

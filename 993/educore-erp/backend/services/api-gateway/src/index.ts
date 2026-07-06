@@ -8,6 +8,7 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 
@@ -67,6 +68,9 @@ fastify.register(jwt, {
   sign: { algorithm: 'HS256' },
 });
 
+// ─── Cookie Plugin (for httpOnly refresh tokens) ──────────────────────────────
+fastify.register(cookie);
+
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 fastify.register(rateLimit, {
   max: Number(process.env.RATE_LIMIT_MAX) || 100,
@@ -114,10 +118,12 @@ fastify.get('/health', async () => ({
 
 fastify.get('/api/info', async () => ({
   name: 'EduCore ERP API',
-  version: '0.1.0-alpha',
+  version: '0.2.0-alpha',
   description: 'AI-Native Multi-Tenant Education ERP — Phase 1 MVP',
   endpoints: {
     auth:       '/api/auth/*',
+    refresh:    'POST /api/auth/refresh  (silent token rotation via httpOnly cookie)',
+    logout:     'POST /api/auth/logout   (revokes refresh token)',
     dashboard:  '/api/dashboard',
     students:   '/api/students',
     attendance: '/api/attendance',
@@ -126,11 +132,12 @@ fastify.get('/api/info', async () => ({
     staff:      '/api/staff',
   },
   security: {
-    auth: 'JWT HS256',
+    auth: 'JWT HS256 (15m access token + 7d httpOnly refresh cookie)',
     cors: allowedOrigins,
     rateLimit: '100 req/min',
     headers: 'Helmet CSP enforced',
-    tenantIsolation: 'RLS via app.current_tenant_id',
+    tenantIsolation: 'RLS via set_config(app.current_tenant_id)',
+    dbRole: 'educore_app (NOBYPASSRLS)',
   },
 }));
 

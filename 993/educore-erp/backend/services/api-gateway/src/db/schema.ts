@@ -163,3 +163,17 @@ export const transportBuses = pgTable('transport_buses', {
   lastUpdated: timestamp('last_updated', { withTimezone: true }),
   status: varchar('status', { length: 20 }).default('INACTIVE').notNull(),
 });
+
+// ─── Refresh Tokens Table ────────────────────────────────────────────────────
+export const refreshTokens = pgTable('refresh_tokens', {
+  id: uuid('token_id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  tokenHash: varchar('token_hash', { length: 255 }).notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  isRevoked: boolean('is_revoked').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  userAgent: varchar('user_agent', { length: 512 }),
+  ipAddress: varchar('ip_address', { length: 50 }),
+});
