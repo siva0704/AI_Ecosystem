@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "git": { "command": "git", "args": [] },
+    "database": { "command": "psql", "args": [] }
+  }
+}
