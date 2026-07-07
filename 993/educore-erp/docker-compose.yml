@@ -44,6 +44,161 @@ services:
     depends_on:
       - postgres
 
+  # ─── Core ERP Microservice (Domain: Finance, etc.) ───────────────────────────
+  core-erp:
+    build: 
+      context: ./backend/services/core-erp
+      dockerfile: Dockerfile
+    container_name: educore_core_erp
+    environment:
+      - NODE_ENV=production
+      - PORT=4001
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4001:4001"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
+  # ─── Academic Microservice (Domain: Neo4j Ontology) ──────────────────────────
+  academic-service:
+    build: 
+      context: ./backend/services/academic-service
+      dockerfile: Dockerfile
+    container_name: educore_academic_service
+    environment:
+      - NODE_ENV=production
+      - PORT=4003
+      - HOST=0.0.0.0
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=educore_neo4j_password
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4003:4003"
+    networks:
+      - educore_net
+    depends_on:
+      - neo4j
+
+  # ─── Platform Admin Microservice (Tier 0) ────────────────────────────────────
+  platform-admin:
+    build: 
+      context: ./backend/services/platform-admin
+      dockerfile: Dockerfile
+    container_name: educore_platform_admin
+    environment:
+      - NODE_ENV=production
+      - PORT=4002
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4002:4002"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
+  # ─── HR Service ──────────────────────────────────────────────────────────────
+  hr-service:
+    build: 
+      context: ./backend/services/hr-service
+      dockerfile: Dockerfile
+    container_name: educore_hr_service
+    environment:
+      - NODE_ENV=production
+      - PORT=4004
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4004:4004"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
+  # ─── Transport Service ───────────────────────────────────────────────────────
+  transport-service:
+    build: 
+      context: ./backend/services/transport-service
+      dockerfile: Dockerfile
+    container_name: educore_transport_service
+    environment:
+      - NODE_ENV=production
+      - PORT=4005
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4005:4005"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
+  # ─── Library Service ─────────────────────────────────────────────────────────
+  library-service:
+    build: 
+      context: ./backend/services/library-service
+      dockerfile: Dockerfile
+    container_name: educore_library_service
+    environment:
+      - NODE_ENV=production
+      - PORT=4006
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4006:4006"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
+  # ─── Hostel Service ──────────────────────────────────────────────────────────
+  hostel-service:
+    build: 
+      context: ./backend/services/hostel-service
+      dockerfile: Dockerfile
+    container_name: educore_hostel_service
+    environment:
+      - NODE_ENV=production
+      - PORT=4007
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4007:4007"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
+  # ─── Notification Service ────────────────────────────────────────────────────
+  notification-service:
+    build: 
+      context: ./backend/services/notification-service
+      dockerfile: Dockerfile
+    container_name: educore_notification_service
+    environment:
+      - NODE_ENV=production
+      - PORT=4008
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://educore_app:educore_app_dev_password@postgres:5432/educore
+      - JWT_SECRET=educore-dev-secret-change-this-in-production-use-vault
+    ports:
+      - "4008:4008"
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
+
   # ─── Next.js Frontend ────────────────────────────────────────────────────────
   web:
     build:
@@ -81,6 +236,56 @@ services:
       - "6379:6379"
     networks:
       - educore_net
+  # ─── Graph Database (Neo4j) ──────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5.20.0
+    container_name: educore_neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/educore_neo4j_password
+      - NEO4J_PLUGINS=["apoc"]
+    ports:
+      - "7474:7474" # HTTP Browser
+      - "7687:7687" # Bolt
+    networks:
+      - educore_net
+    volumes:
+      - neo4jdata:/data
+
+  # ─── EventStoreDB ────────────────────────────────────────────────────────────
+  eventstore:
+    image: eventstore/eventstore:24.2.0-jammy
+    container_name: educore_eventstore
+    environment:
+      - EVENTSTORE_CLUSTER_SIZE=1
+      - EVENTSTORE_RUN_PROJECTIONS=All
+      - EVENTSTORE_START_STANDARD_PROJECTIONS=true
+      - EVENTSTORE_HTTP_PORT=2113
+      - EVENTSTORE_INSECURE=true
+      - EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP=true
+    ports:
+      - "2113:2113"
+    networks:
+      - educore_net
+    volumes:
+      - eventstoredata:/var/lib/eventstore
+
+  # ─── Temporal.io (Saga Orchestration) ────────────────────────────────────────
+  temporal:
+    image: temporalio/auto-setup:1.23.0
+    container_name: educore_temporal
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=9902850039
+      - POSTGRES_SEEDS=postgres
+    ports:
+      - "7233:7233" # gRPC
+      - "8233:8233" # Web UI
+    networks:
+      - educore_net
+    depends_on:
+      - postgres
 
 networks:
   educore_net:
@@ -88,3 +293,5 @@ networks:
 
 volumes:
   pgdata:
+  neo4jdata:
+  eventstoredata:

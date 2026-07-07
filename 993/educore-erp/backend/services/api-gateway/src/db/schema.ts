@@ -39,8 +39,7 @@ export const students = pgTable('students', {
   lastName: varchar('last_name', { length: 100 }).notNull(),
   dateOfBirth: date('date_of_birth').notNull(),
   gender: varchar('gender', { length: 10 }).notNull(),
-  grade: varchar('grade', { length: 20 }).notNull(),
-  section: varchar('section', { length: 10 }).notNull(),
+  classId: uuid('class_id').notNull().references(() => classes.id),
   rollNumber: varchar('roll_number', { length: 20 }).notNull(),
   parentEmail: varchar('parent_email', { length: 254 }),
   parentPhone: varchar('parent_phone', { length: 100 }), // encrypted in production
@@ -72,11 +71,42 @@ export const staff = pgTable('staff', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
+// ─── Academic: Classes Table ─────────────────────────────────────────────────
+export const classes = pgTable('classes', {
+  id: uuid('class_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  grade: varchar('grade', { length: 20 }).notNull(),
+  section: varchar('section', { length: 10 }).notNull(),
+  classTeacherId: uuid('class_teacher_id').references(() => staff.id),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── Academic: Subjects Table ────────────────────────────────────────────────
+export const subjects = pgTable('subjects', {
+  id: uuid('subject_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 200 }).notNull(),
+  code: varchar('code', { length: 50 }).notNull(),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── Academic: Class Subjects (Mapping) ──────────────────────────────────────
+export const classSubjects = pgTable('class_subjects', {
+  id: uuid('mapping_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  classId: uuid('class_id').notNull().references(() => classes.id, { onDelete: 'cascade' }),
+  subjectId: uuid('subject_id').notNull().references(() => subjects.id, { onDelete: 'cascade' }),
+  teacherId: uuid('teacher_id').references(() => staff.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
 // ─── Attendance Records Table ────────────────────────────────────────────────
 export const attendanceRecords = pgTable('attendance_records', {
   id: uuid('attendance_id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  classId: varchar('class_id', { length: 50 }).notNull(),
+  classId: uuid('class_id').notNull().references(() => classes.id),
   studentId: uuid('student_id').notNull().references(() => students.id),
   date: date('date').notNull(),
   status: varchar('status', { length: 20 }).notNull(),
@@ -91,8 +121,8 @@ export const assignments = pgTable('assignments', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   title: varchar('title', { length: 200 }).notNull(),
   description: varchar('description', { length: 2000 }),
-  subjectId: varchar('subject_id', { length: 50 }).notNull(),
-  classId: varchar('class_id', { length: 50 }).notNull(),
+  subjectId: uuid('subject_id').notNull().references(() => subjects.id),
+  classId: uuid('class_id').notNull().references(() => classes.id),
   createdBy: uuid('created_by').notNull().references(() => users.id),
   dueDate: date('due_date').notNull(),
   maxMarks: smallint('max_marks').notNull(),
@@ -162,6 +192,78 @@ export const transportBuses = pgTable('transport_buses', {
   currentLongitude: decimal('current_longitude', { precision: 10, scale: 7 }),
   lastUpdated: timestamp('last_updated', { withTimezone: true }),
   status: varchar('status', { length: 20 }).default('INACTIVE').notNull(),
+});
+
+// ─── Leave Requests Table ───────────────────────────────────────────────────
+export const leaveRequests = pgTable('leave_requests', {
+  id: uuid('leave_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  staffId: uuid('staff_id').notNull().references(() => staff.id, { onDelete: 'cascade' }),
+  leaveType: varchar('leave_type', { length: 50 }).notNull(),
+  fromDate: date('from_date').notNull(),
+  toDate: date('to_date').notNull(),
+  daysCount: smallint('days_count').notNull(),
+  reason: varchar('reason', { length: 2000 }),
+  status: varchar('status', { length: 20 }).default('PENDING').notNull(),
+  reviewedBy: uuid('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewNote: varchar('review_note', { length: 1000 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── DPDP Consent Log Table (APPEND-ONLY — IMMUTABLE) ────────────────────────
+export const dpdpConsentLog = pgTable('dpdp_consent_log', {
+  id: uuid('consent_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  staffId: uuid('staff_id').notNull().references(() => staff.id, { onDelete: 'cascade' }),
+  dataCategory: varchar('data_category', { length: 100 }).notNull(),
+  consentGiven: boolean('consent_given').notNull(),
+  consentVersion: varchar('consent_version', { length: 20 }).default('1.0').notNull(),
+  ipAddress: varchar('ip_address', { length: 50 }),
+  userAgent: varchar('user_agent', { length: 512 }),
+  recordedBy: uuid('recorded_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── Hostel Allocations Table ─────────────────────────────────────────────────
+export const hostelAllocations = pgTable('hostel_allocations', {
+  id: uuid('allocation_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  roomId: uuid('room_id').notNull().references(() => hostelRooms.id),
+  studentId: uuid('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+  academicYear: varchar('academic_year', { length: 20 }).default('2026-27').notNull(),
+  checkInDate: date('check_in_date').notNull(),
+  checkOutDate: date('check_out_date'),
+  status: varchar('status', { length: 20 }).default('ACTIVE').notNull(),
+  allocatedBy: uuid('allocated_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── Transport Routes Table ───────────────────────────────────────────────────
+export const transportRoutes = pgTable('transport_routes', {
+  id: uuid('route_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  routeName: varchar('route_name', { length: 200 }).notNull(),
+  origin: varchar('origin', { length: 200 }).notNull(),
+  stops: jsonb('stops').default([]).notNull(),
+  estimatedMins: smallint('estimated_mins'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── Bus Assignments Table ────────────────────────────────────────────────────
+export const busAssignments = pgTable('bus_assignments', {
+  id: uuid('assignment_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  studentId: uuid('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+  busId: uuid('bus_id').notNull().references(() => transportBuses.id),
+  routeId: uuid('route_id').notNull().references(() => transportRoutes.id),
+  academicYear: varchar('academic_year', { length: 20 }).default('2026-27').notNull(),
+  pickupStop: varchar('pickup_stop', { length: 200 }),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
 // ─── Refresh Tokens Table ────────────────────────────────────────────────────

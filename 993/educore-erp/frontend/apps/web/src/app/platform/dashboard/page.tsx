@@ -23,7 +23,7 @@ export default function SuperAdminDashboard() {
         <div>
           <h2 className="text-white font-semibold text-base mb-4">Quick Actions</h2>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-            <QuickAction label="Add Tenant" icon="➕" href="/platform/tenants" />
+            <QuickAction label="Add Tenant" icon="➕" href="/platform/tenants/onboard" />
             <QuickAction label="Billing" icon="💳" href="/platform/billing" />
             <QuickAction label="Feature Flags" icon="🚩" href="/platform/flags" />
             <QuickAction label="Audit Log" icon="📋" href="/platform/audit" />

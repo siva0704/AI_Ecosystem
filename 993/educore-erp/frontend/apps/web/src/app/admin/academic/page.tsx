@@ -1,17 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { AlertBanner } from '@/components/ui/DashboardWidgets';
 
+interface ClassRecord {
+  id: string;
+  grade: string;
+  section: string;
+  classTeacherId: string | null;
+  teacherFirstName: string | null;
+  teacherLastName: string | null;
+}
+
 export default function AcademicSetupPage() {
+  const [classes, setClasses] = useState<ClassRecord[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(true);
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     dateOfBirth: '',
     gender: 'MALE',
-    grade: '10',
-    section: 'A',
+    classId: '',
     rollNumber: '',
     parentEmail: '',
     parentPhone: '',
@@ -19,6 +30,27 @@ export default function AcademicSetupPage() {
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    async function fetchClasses() {
+      try {
+        const token = localStorage.getItem('educore_token');
+        const res = await fetch('http://localhost:4000/api/academic/classes', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.success && data.data.length > 0) {
+          setClasses(data.data);
+          setFormData((prev) => ({ ...prev, classId: data.data[0].id }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch classes:', error);
+      } finally {
+        setLoadingClasses(false);
+      }
+    }
+    fetchClasses();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -44,14 +76,12 @@ export default function AcademicSetupPage() {
       const result = await res.json();
       if (result.success) {
         setMessage({ type: 'success', message: `Student ${formData.firstName} ${formData.lastName} registered successfully!` });
-        // Clear form
         setFormData({
           firstName: '',
           lastName: '',
           dateOfBirth: '',
           gender: 'MALE',
-          grade: '10',
-          section: 'A',
+          classId: classes[0]?.id || '',
           rollNumber: '',
           parentEmail: '',
           parentPhone: '',
@@ -74,7 +104,7 @@ export default function AcademicSetupPage() {
         <div className="grid md:grid-cols-3 gap-6">
           {/* Main Admission Form */}
           <div className="md:col-span-2 glass rounded-2xl p-6 space-y-6">
-            <div className="border-b border-slate-800 pb-4">
+            <div className="border-b border-white/5 pb-4">
               <h2 className="text-white text-lg font-bold">New Student Registration</h2>
               <p className="text-slate-400 text-xs mt-1">Enroll a student into the institution roster</p>
             </div>
@@ -134,32 +164,27 @@ export default function AcademicSetupPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-slate-400 text-xs mb-1.5 font-medium">Grade / Class *</label>
+                  <label className="block text-slate-400 text-xs mb-1.5 font-medium">Assigned Class *</label>
                   <select
-                    name="grade"
-                    value={formData.grade}
+                    name="classId"
+                    value={formData.classId}
                     onChange={handleChange}
+                    disabled={loadingClasses || classes.length === 0}
                     className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="9">Grade 9</option>
-                    <option value="10">Grade 10</option>
-                    <option value="11">Grade 11</option>
-                    <option value="12">Grade 12</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-slate-400 text-xs mb-1.5 font-medium">Section *</label>
-                  <select
-                    name="section"
-                    value={formData.section}
-                    onChange={handleChange}
-                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="A">Section A</option>
-                    <option value="B">Section B</option>
-                    <option value="C">Section C</option>
+                    {loadingClasses ? (
+                      <option value="">Loading Classes...</option>
+                    ) : classes.length === 0 ? (
+                      <option value="">No Classes Found</option>
+                    ) : (
+                      classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Grade {c.grade} - Section {c.section} {c.teacherFirstName ? `(CT: ${c.teacherFirstName})` : ''}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div>
@@ -176,7 +201,7 @@ export default function AcademicSetupPage() {
                 </div>
               </div>
 
-              <div className="border-t border-slate-800 my-4 pt-4">
+              <div className="border-t border-white/5 my-4 pt-4">
                 <h3 className="text-white text-sm font-semibold mb-3">Guardian Information</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -207,7 +232,7 @@ export default function AcademicSetupPage() {
               <div className="flex justify-end pt-2">
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || classes.length === 0}
                   className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-semibold text-sm px-6 py-3 rounded-xl transition cursor-pointer flex items-center gap-2"
                 >
                   {saving ? 'Registering...' : 'Register Student'}
@@ -218,21 +243,21 @@ export default function AcademicSetupPage() {
 
           {/* Quick Stats sidebar */}
           <div className="glass rounded-2xl p-6 space-y-4 h-fit">
-            <h3 className="text-white font-bold text-sm">Admission Stats</h3>
+            <h3 className="text-white font-bold text-sm">Academic Overview</h3>
             <div className="space-y-3">
               <div className="p-3 bg-slate-900/60 rounded-xl">
-                <span className="text-slate-400 text-xs block">Active Admissions</span>
-                <span className="text-white text-xl font-bold">1,840</span>
+                <span className="text-slate-400 text-xs block">Active Classes</span>
+                <span className="text-white text-xl font-bold">{loadingClasses ? '...' : classes.length}</span>
               </div>
               <div className="p-3 bg-slate-900/60 rounded-xl">
-                <span className="text-slate-400 text-xs block">New This Term</span>
+                <span className="text-slate-400 text-xs block">New Admissions</span>
                 <span className="text-indigo-400 text-xl font-bold">+124</span>
               </div>
             </div>
-            <div className="bg-slate-900/40 p-4 rounded-xl border border-slate-800/80">
-              <span className="text-amber-400 text-xs font-semibold block mb-1">🛡️ RLS Isolation Layer</span>
+            <div className="bg-slate-900/40 p-4 rounded-xl border border-white/5">
+              <span className="text-emerald-400 text-xs font-semibold block mb-1">✓ Dynamic Relational Mapping</span>
               <p className="text-slate-500 text-[11px] leading-relaxed">
-                Admitted student records are partitioned at the database engine level. Query context is automatically bounded to this institution instance.
+                Classes are fetched dynamically from the database and bound to Row-Level Security policies.
               </p>
             </div>
           </div>
@@ -241,3 +266,4 @@ export default function AcademicSetupPage() {
     </DashboardShell>
   );
 }
+

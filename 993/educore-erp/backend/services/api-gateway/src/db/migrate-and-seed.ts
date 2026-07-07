@@ -24,6 +24,7 @@ export function mapShortIdToUuid(shortId: string | null): string | null {
     bus: '0500',
     ftx: '0600',
     att: '0700',
+    cls: '0800',
   };
 
   const block = typeMap[type] || '9999';
@@ -37,26 +38,41 @@ async function runMigrateAndSeed() {
   const client = await pool.connect();
 
   try {
-    // 1. Read core DDL schema file
-    const schemaPath = path.resolve(process.cwd(), '../../database/schemas/001_core_schema.sql');
-    console.log(`📖 Loading DDL schema from: ${schemaPath}`);
-    const ddl = fs.readFileSync(schemaPath, 'utf8');
+    // 1. Read and execute all schema files
+    const schemaFiles = [
+      '001_core_schema.sql',
+      '002_app_role.sql',
+      '003_auth_function.sql',
+      '004_fix_rls_permissive.sql',
+      '005_refresh_tokens.sql',
+      '006_hr_extensions.sql'
+    ];
 
-    // 2. Execute schema initialization
     await client.query('BEGIN');
+    console.log('🧹 Dropping existing public schema to start fresh...');
+    await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;');
     console.log('🛠️ Creating database tables, rules and RLS policies...');
-    await client.query(ddl);
+
+    for (const file of schemaFiles) {
+      const schemaPath = path.resolve(process.cwd(), '../../../database/schemas/', file);
+      console.log(`📖 Executing DDL from: ${file}`);
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      await client.query(sql);
+    }
+    
     await client.query('COMMIT');
     console.log('✅ Core relational DDL initialized successfully.');
 
     // 3. Seed Demo Tenant
     const tenantId = '00000000-0000-0000-0000-000000000001';
     console.log('🌱 Seeding demo tenant...');
-    await client.query(`
+    const res = await client.query(`
       INSERT INTO tenants (tenant_id, domain_name, display_name, kms_dek_arn)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (domain_name) DO NOTHING
+      RETURNING *
     `, [tenantId, 'demo', 'Greenfield Academy (Demo)', 'arn:aws:kms:ap-south-1:123456789012:key/demo-dek']);
+    console.log('Tenant insert result:', res.rowCount, res.rows);
 
     // 4. Seed 13 Demo Users
     console.log('🌱 Seeding demo users (encrypting passwords)...');
@@ -90,14 +106,29 @@ async function runMigrateAndSeed() {
       `, [mappedUserId, tenantId, u.email, hash, firstName, lastName, u.role, u.tier, u.subdomain]);
     }
 
+    // 4.5 Seed Classes
+    console.log('🌱 Seeding classes...');
+    const class10AId = mapShortIdToUuid('cls-001');
+    const class10BId = mapShortIdToUuid('cls-002');
+    const class9AId = mapShortIdToUuid('cls-003');
+    
+    await client.query(`
+      INSERT INTO classes (class_id, tenant_id, grade, section)
+      VALUES 
+        ($1, $2, '10', 'A'),
+        ($3, $2, '10', 'B'),
+        ($4, $2, '9', 'A')
+      ON CONFLICT (tenant_id, grade, section) DO NOTHING
+    `, [class10AId, tenantId, class10BId, class9AId]);
+
     // 5. Seed Students
     console.log('🌱 Seeding student roster...');
     const students = [
-      { id: 'stu-001', userId: 'usr-010', fn: 'Arjun', ln: 'Patel', dob: '2010-03-15', gen: 'MALE', gd: '10', sec: 'A', roll: '10A001', pem: 'parent@demo.educore.dev' },
-      { id: 'stu-002', userId: null, fn: 'Priya', ln: 'Singh', dob: '2010-07-22', gen: 'FEMALE', gd: '10', sec: 'A', roll: '10A002', pem: 'parent2@demo.educore.dev' },
-      { id: 'stu-003', userId: null, fn: 'Rohan', ln: 'Mehta', dob: '2010-11-08', gen: 'MALE', gd: '10', sec: 'B', roll: '10B001', pem: 'parent3@demo.educore.dev' },
-      { id: 'stu-004', userId: null, fn: 'Asha', ln: 'Rao', dob: '2011-02-14', gen: 'FEMALE', gd: '9', sec: 'A', roll: '9A001', pem: 'parent4@demo.educore.dev' },
-      { id: 'stu-005', userId: null, fn: 'Kiran', ln: 'Kumar', dob: '2011-09-30', gen: 'MALE', gd: '9', sec: 'A', roll: '9A002', pem: 'parent5@demo.educore.dev' }
+      { id: 'stu-001', userId: 'usr-010', fn: 'Arjun', ln: 'Patel', dob: '2010-03-15', gen: 'MALE', classId: 'cls-001', roll: '10A001', pem: 'parent@demo.educore.dev' },
+      { id: 'stu-002', userId: null, fn: 'Priya', ln: 'Singh', dob: '2010-07-22', gen: 'FEMALE', classId: 'cls-001', roll: '10A002', pem: 'parent2@demo.educore.dev' },
+      { id: 'stu-003', userId: null, fn: 'Rohan', ln: 'Mehta', dob: '2010-11-08', gen: 'MALE', classId: 'cls-002', roll: '10B001', pem: 'parent3@demo.educore.dev' },
+      { id: 'stu-004', userId: null, fn: 'Asha', ln: 'Rao', dob: '2011-02-14', gen: 'FEMALE', classId: 'cls-003', roll: '9A001', pem: 'parent4@demo.educore.dev' },
+      { id: 'stu-005', userId: null, fn: 'Kiran', ln: 'Kumar', dob: '2011-09-30', gen: 'MALE', classId: 'cls-003', roll: '9A002', pem: 'parent5@demo.educore.dev' }
     ];
 
     for (const s of students) {
@@ -105,10 +136,10 @@ async function runMigrateAndSeed() {
       const mappedUserId = mapShortIdToUuid(s.userId);
 
       await client.query(`
-        INSERT INTO students (student_id, tenant_id, user_id, first_name, last_name, date_of_birth, gender, grade, section, roll_number, parent_email, academic_year)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '2026-27')
-        ON CONFLICT (tenant_id, grade, section, roll_number) DO NOTHING
-      `, [mappedStuId, tenantId, mappedUserId, s.fn, s.ln, s.dob, s.gen, s.gd, s.sec, s.roll, s.pem]);
+        INSERT INTO students (student_id, tenant_id, user_id, first_name, last_name, date_of_birth, gender, class_id, roll_number, parent_email, academic_year)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, '2026-27')
+        ON CONFLICT (tenant_id, class_id, roll_number) DO NOTHING
+      `, [mappedStuId, tenantId, mappedUserId, s.fn, s.ln, s.dob, s.gen, mapShortIdToUuid(s.classId), s.roll, s.pem]);
     }
 
     // 6. Seed Staff
@@ -209,7 +240,7 @@ async function runMigrateAndSeed() {
 }
 
 // Allow direct execution
-if (process.argv[1] && process.argv[1].endsWith('migrate-and-seed.ts')) {
+if (process.argv[1] && (process.argv[1].endsWith('migrate-and-seed.ts') || process.argv[1].endsWith('migrate-and-seed.js'))) {
   runMigrateAndSeed().catch((err) => {
     console.error('Migration execution failed with error:', err);
     process.exit(1);

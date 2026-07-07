@@ -40,6 +40,8 @@ export function StatCard({ label, value, icon, trend, color = 'indigo' }: StatCa
   );
 }
 
+import Link from 'next/link';
+
 interface QuickActionProps {
   label: string;
   icon: string;
@@ -57,7 +59,7 @@ export function QuickAction({ label, icon, href, onClick, color = 'indigo' }: Qu
     </>
   );
   if (href) {
-    return <a href={href} className={cls}>{inner}</a>;
+    return <Link href={href} className={cls}>{inner}</Link>;
   }
   return <button onClick={onClick} className={cls}>{inner}</button>;
 }

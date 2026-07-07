@@ -13,6 +13,7 @@ import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 import { authRoutes } from './routes/auth';
 import { dashboardRoutes } from './routes/dashboard';
@@ -21,6 +22,10 @@ import { attendanceRoutes } from './routes/attendance';
 import { feeRoutes } from './routes/fees';
 import { libraryRoutes } from './routes/library';
 import { staffRoutes } from './routes/staff';
+import { academicRoutes } from './routes/academic';
+import { hrRoutes } from './routes/hr';
+import { transportRoutesPlugin } from './routes/transport';
+import { hostelRoutesPlugin } from './routes/hostel';
 import { auditLoggerPlugin } from './middleware/audit-logger';
 
 const fastify = Fastify({
@@ -29,6 +34,9 @@ const fastify = Fastify({
       ? { target: 'pino-pretty', options: { colorize: true } }
       : undefined,
   },
+  genReqId: function (req) {
+    return (req.headers['x-correlation-id'] as string) || crypto.randomUUID();
+  }
 });
 
 // ─── Security Headers (Helmet) ───────────────────────────────────────────────
@@ -119,6 +127,10 @@ fastify.register(attendanceRoutes, { prefix: '/api/attendance' });
 fastify.register(feeRoutes,        { prefix: '/api/fees' });
 fastify.register(libraryRoutes,    { prefix: '/api/library' });
 fastify.register(staffRoutes,      { prefix: '/api/staff' });
+fastify.register(academicRoutes,   { prefix: '/api/academic' });
+fastify.register(hrRoutes,         { prefix: '/api/hr' });
+fastify.register(transportRoutesPlugin, { prefix: '/api/transport' });
+fastify.register(hostelRoutesPlugin,    { prefix: '/api/hostel' });
 
 // ─── Health & Info ────────────────────────────────────────────────────────────
 fastify.get('/health', async () => ({

@@ -40,4 +40,3 @@ COMMENT ON TABLE refresh_tokens IS 'Server-side refresh token store. Rotate on e
 
 -- Grant app role access (no RLS needed — all access via app logic with user_id)
 GRANT SELECT, INSERT, UPDATE ON TABLE refresh_tokens TO educore_app;
-GRANT USAGE ON SEQUENCE refresh_tokens_token_id_seq TO educore_app;

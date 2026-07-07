@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install build dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy source code and build
 COPY tsconfig.json ./
@@ -22,10 +22,13 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Copy package.json and install only production dependencies
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --only=production && npm cache clean --force
 
 # Copy built artifacts from the builder stage
 COPY --from=builder /app/dist ./dist
+
+# Copy JWT keys
+COPY keys/ ./keys/
 
 # Set permissions
 RUN chown -R appuser:appgroup /app

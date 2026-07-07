@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { AlertBanner } from '@/components/ui/DashboardWidgets';
+import { API_BASE } from '@/lib/types/auth';
 
 interface Student {
   id: string;
@@ -38,7 +39,7 @@ export default function FeeCollectionPage() {
     async function fetchStudents() {
       try {
         const token = localStorage.getItem('educore_token');
-        const res = await fetch(`http://localhost:4000/api/students?limit=50&search=${search}`, {
+        const res = await fetch(`${API_BASE}/api/academic/students?limit=50&search=${search}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -60,7 +61,7 @@ export default function FeeCollectionPage() {
     async function fetchStructures() {
       try {
         const token = localStorage.getItem('educore_token');
-        const res = await fetch('http://localhost:4000/api/fees/structures', {
+        const res = await fetch(`${API_BASE}/api/fees/structures`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -81,7 +82,7 @@ export default function FeeCollectionPage() {
     async function fetchHistory() {
       try {
         const token = localStorage.getItem('educore_token');
-        const res = await fetch(`http://localhost:4000/api/fees?studentId=${studentId}`, {
+        const res = await fetch(`${API_BASE}/api/fees?studentId=${studentId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -103,7 +104,7 @@ export default function FeeCollectionPage() {
 
     try {
       const token = localStorage.getItem('educore_token');
-      const res = await fetch('http://localhost:4000/api/fees/initiate', {
+      const res = await fetch(`${API_BASE}/api/fees/initiate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,7 +121,7 @@ export default function FeeCollectionPage() {
       if (data.success) {
         setMessage({ type: 'success', text: 'Transaction recorded successfully in ledger.' });
         // Refresh history
-        const updatedRes = await fetch(`http://localhost:4000/api/fees?studentId=${selectedStudent.id}`, {
+        const updatedRes = await fetch(`${API_BASE}/api/fees?studentId=${selectedStudent.id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const updatedData = await updatedRes.json();

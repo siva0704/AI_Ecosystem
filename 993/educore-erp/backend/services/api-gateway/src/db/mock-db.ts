@@ -59,8 +59,7 @@ export interface Student {
   last_name: string;
   date_of_birth: string;
   gender: 'MALE' | 'FEMALE' | 'OTHER';
-  grade: string;
-  section: string;
+  class_id: string;
   roll_number: string;
   parent_email?: string;
   parent_phone?: string;
@@ -176,8 +175,7 @@ export async function queryStudents(tenantId: string, search?: string): Promise<
       last_name: s.lastName,
       date_of_birth: s.dateOfBirth,
       gender: s.gender as any,
-      grade: s.grade,
-      section: s.section,
+      class_id: mapUuidToShortId(s.classId)!,
       roll_number: s.rollNumber,
       parent_email: s.parentEmail || undefined,
       parent_phone: s.parentPhone || undefined,
@@ -387,8 +385,7 @@ export async function addStudent(
         lastName: student.last_name,
         dateOfBirth: student.date_of_birth,
         gender: student.gender,
-        grade: student.grade,
-        section: student.section,
+        classId: mapShortIdToUuid(student.class_id)!,
         rollNumber: student.roll_number,
         parentEmail: student.parent_email || null,
         parentPhone: student.parent_phone || null,
@@ -402,8 +399,7 @@ export async function addStudent(
       last_name: inserted.lastName,
       date_of_birth: inserted.dateOfBirth,
       gender: inserted.gender as any,
-      grade: inserted.grade,
-      section: inserted.section,
+      class_id: mapUuidToShortId(inserted.classId)!,
       roll_number: inserted.rollNumber,
       parent_email: inserted.parentEmail || undefined,
       parent_phone: inserted.parentPhone || undefined,

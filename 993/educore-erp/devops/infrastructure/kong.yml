@@ -1,7 +1,5 @@
 _format_version: "3.0"
-_info:
-  select_tags:
-    - educore
+
 
 services:
   - name: api-gateway-bff
@@ -34,7 +32,54 @@ services:
       - name: health-route
         paths:
           - /health
-
+  - name: core-erp-service
+    url: http://core-erp:4001
+    routes:
+      - name: core-finance-routes
+        paths:
+          - /api/finance
+  - name: platform-admin-service
+    url: http://platform-admin:4002
+    routes:
+      - name: platform-routes
+        paths:
+          - /api/platform
+  - name: academic-service
+    url: http://academic-service:4003
+    routes:
+      - name: academic-routes
+        paths:
+          - /api/academic
+  - name: hr-service
+    url: http://hr-service:4004
+    routes:
+      - name: hr-routes
+        paths:
+          - /api/hr
+  - name: transport-service
+    url: http://transport-service:4005
+    routes:
+      - name: transport-routes
+        paths:
+          - /api/transport
+  - name: library-service
+    url: http://library-service:4006
+    routes:
+      - name: library-routes
+        paths:
+          - /api/library
+  - name: hostel-service
+    url: http://hostel-service:4007
+    routes:
+      - name: hostel-routes
+        paths:
+          - /api/hostel
+  - name: notification-service
+    url: http://notification-service:4008
+    routes:
+      - name: notification-routes
+        paths:
+          - /api/notifications
 plugins:
   - name: cors
     config:

@@ -55,37 +55,6 @@ CREATE POLICY users_isolation_policy ON users
   USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID
       OR tier = 0); -- Super admin bypasses tenant filter
 
--- ─── Students ────────────────────────────────────────────────────────────────
-CREATE TABLE students (
-  student_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id       UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-  user_id         UUID REFERENCES users(user_id),  -- linked portal user (optional)
-  first_name      VARCHAR(100) NOT NULL,
-  last_name       VARCHAR(100) NOT NULL,
-  date_of_birth   DATE NOT NULL,
-  gender          VARCHAR(10) NOT NULL CHECK (gender IN ('MALE','FEMALE','OTHER')),
-  grade           VARCHAR(20) NOT NULL,
-  section         VARCHAR(10) NOT NULL,
-  roll_number     VARCHAR(20) NOT NULL,
-  parent_email    VARCHAR(254),
-  parent_phone    TEXT,                             -- encrypted in prod via KMS
-  aadhaar_hash    TEXT,                             -- NEVER store raw Aadhaar (DPDP §4)
-  address         JSONB,                            -- GIN indexed (jsonb_path_ops)
-  is_active       BOOLEAN DEFAULT TRUE,
-  academic_year   VARCHAR(20) NOT NULL,
-  created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (tenant_id, grade, section, roll_number)
-);
-
-ALTER TABLE students ENABLE ROW LEVEL SECURITY;
-CREATE POLICY students_isolation_policy ON students
-  AS RESTRICTIVE
-  USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
-
-CREATE INDEX students_name_trgm_idx ON students USING GIN (first_name gin_trgm_ops, last_name gin_trgm_ops);
-CREATE INDEX students_address_gin_idx ON students USING GIN (address jsonb_path_ops);
-
 -- ─── Staff ───────────────────────────────────────────────────────────────────
 CREATE TABLE staff (
   staff_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -113,11 +82,84 @@ CREATE POLICY staff_isolation_policy ON staff
   AS RESTRICTIVE
   USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
 
+-- ─── Academic: Classes ───────────────────────────────────────────────────────
+CREATE TABLE classes (
+  class_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  grade           VARCHAR(20) NOT NULL,
+  section         VARCHAR(10) NOT NULL,
+  class_teacher_id UUID REFERENCES staff(staff_id),
+  is_active       BOOLEAN DEFAULT TRUE,
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (tenant_id, grade, section)
+);
+ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY classes_isolation_policy ON classes
+  AS RESTRICTIVE USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
+
+-- ─── Academic: Subjects ──────────────────────────────────────────────────────
+CREATE TABLE subjects (
+  subject_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  name            VARCHAR(200) NOT NULL,
+  code            VARCHAR(50) NOT NULL,
+  is_active       BOOLEAN DEFAULT TRUE,
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (tenant_id, code)
+);
+ALTER TABLE subjects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY subjects_isolation_policy ON subjects
+  AS RESTRICTIVE USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
+
+-- ─── Academic: Class Subjects (Mapping) ──────────────────────────────────────
+CREATE TABLE class_subjects (
+  mapping_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  class_id        UUID NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
+  subject_id      UUID NOT NULL REFERENCES subjects(subject_id) ON DELETE CASCADE,
+  teacher_id      UUID REFERENCES staff(staff_id),
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (tenant_id, class_id, subject_id)
+);
+ALTER TABLE class_subjects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY class_subjects_isolation_policy ON class_subjects
+  AS RESTRICTIVE USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
+
+-- ─── Students ────────────────────────────────────────────────────────────────
+CREATE TABLE students (
+  student_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  user_id         UUID REFERENCES users(user_id),  -- linked portal user (optional)
+  first_name      VARCHAR(100) NOT NULL,
+  last_name       VARCHAR(100) NOT NULL,
+  date_of_birth   DATE NOT NULL,
+  gender          VARCHAR(10) NOT NULL CHECK (gender IN ('MALE','FEMALE','OTHER')),
+  class_id        UUID NOT NULL REFERENCES classes(class_id),
+  roll_number     VARCHAR(20) NOT NULL,
+  parent_email    VARCHAR(254),
+  parent_phone    TEXT,                             -- encrypted in prod via KMS
+  aadhaar_hash    TEXT,                             -- NEVER store raw Aadhaar (DPDP §4)
+  address         JSONB,                            -- GIN indexed (jsonb_path_ops)
+  is_active       BOOLEAN DEFAULT TRUE,
+  academic_year   VARCHAR(20) NOT NULL,
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (tenant_id, class_id, roll_number)
+);
+
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+CREATE POLICY students_isolation_policy ON students
+  AS RESTRICTIVE
+  USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
+
+CREATE INDEX students_name_trgm_idx ON students USING GIN (first_name gin_trgm_ops, last_name gin_trgm_ops);
+CREATE INDEX students_address_gin_idx ON students USING GIN (address jsonb_path_ops);
+
 -- ─── Attendance Records ───────────────────────────────────────────────────────
 CREATE TABLE attendance_records (
   attendance_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-  class_id        VARCHAR(50) NOT NULL,
+  class_id        UUID NOT NULL REFERENCES classes(class_id),
   student_id      UUID NOT NULL REFERENCES students(student_id),
   date            DATE NOT NULL,
   status          VARCHAR(20) NOT NULL CHECK (status IN ('PRESENT','ABSENT','LATE','EXCUSED')),
@@ -141,8 +183,8 @@ CREATE TABLE assignments (
   tenant_id       UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
   title           VARCHAR(200) NOT NULL,
   description     TEXT,
-  subject_id      VARCHAR(50) NOT NULL,
-  class_id        VARCHAR(50) NOT NULL,
+  subject_id      UUID NOT NULL REFERENCES subjects(subject_id),
+  class_id        UUID NOT NULL REFERENCES classes(class_id),
   created_by      UUID NOT NULL REFERENCES users(user_id),
   due_date        DATE NOT NULL,
   max_marks       SMALLINT NOT NULL CHECK (max_marks >= 0),

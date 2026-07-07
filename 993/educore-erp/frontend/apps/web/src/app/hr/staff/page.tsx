@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { AlertBanner } from '@/components/ui/DashboardWidgets';
+import { API_BASE } from '@/lib/types/auth';
 
 interface Staff {
   id: string;
@@ -42,7 +43,7 @@ export default function HRStaffDirectoryPage() {
     setLoading(true);
     try {
       const token = localStorage.getItem('educore_token');
-      const res = await fetch(`http://localhost:4000/api/staff?search=${search}`, {
+      const res = await fetch(`${API_BASE}/api/hr/staff`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -69,7 +70,7 @@ export default function HRStaffDirectoryPage() {
 
     try {
       const token = localStorage.getItem('educore_token');
-      const res = await fetch('http://localhost:4000/api/staff', {
+      const res = await fetch(`${API_BASE}/api/hr/onboard`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
