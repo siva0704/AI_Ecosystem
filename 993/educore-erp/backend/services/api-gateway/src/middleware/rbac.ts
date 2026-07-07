@@ -45,6 +45,7 @@ export const RBAC_CONFIG: Record<Role, RoleConfig> = {
     color: 'indigo',
     menus: [
       { label: 'Dashboard', href: '/admin/dashboard', icon: '🏠' },
+      { label: 'Admissions', href: '/admin/admissions', icon: '🎓' },
       { label: 'Academic Setup', href: '/admin/academic', icon: '📚' },
       { label: 'Staff Management', href: '/admin/staff', icon: '👥' },
       { label: 'Finance Overview', href: '/admin/finance', icon: '💰' },

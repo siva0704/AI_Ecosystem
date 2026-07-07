@@ -45,7 +45,8 @@ async function runMigrateAndSeed() {
       '003_auth_function.sql',
       '004_fix_rls_permissive.sql',
       '005_refresh_tokens.sql',
-      '006_hr_extensions.sql'
+      '006_hr_extensions.sql',
+      '007_admissions.sql'
     ];
 
     await client.query('BEGIN');

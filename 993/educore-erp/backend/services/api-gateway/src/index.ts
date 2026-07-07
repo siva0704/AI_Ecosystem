@@ -26,6 +26,7 @@ import { academicRoutes } from './routes/academic';
 import { hrRoutes } from './routes/hr';
 import { transportRoutesPlugin } from './routes/transport';
 import { hostelRoutesPlugin } from './routes/hostel';
+import { admissionsRoutes } from './routes/admissions';
 import { auditLoggerPlugin } from './middleware/audit-logger';
 
 const fastify = Fastify({
@@ -120,17 +121,18 @@ fastify.decorate('authenticate', async (request: any, reply: any) => {
 });
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
-fastify.register(authRoutes,       { prefix: '/api/auth' });
-fastify.register(dashboardRoutes,  { prefix: '/api/dashboard' });
-fastify.register(studentsRoutes,   { prefix: '/api/students' });
-fastify.register(attendanceRoutes, { prefix: '/api/attendance' });
-fastify.register(feeRoutes,        { prefix: '/api/fees' });
-fastify.register(libraryRoutes,    { prefix: '/api/library' });
-fastify.register(staffRoutes,      { prefix: '/api/staff' });
-fastify.register(academicRoutes,   { prefix: '/api/academic' });
-fastify.register(hrRoutes,         { prefix: '/api/hr' });
+fastify.register(authRoutes,        { prefix: '/api/auth' });
+fastify.register(dashboardRoutes,   { prefix: '/api/dashboard' });
+fastify.register(studentsRoutes,    { prefix: '/api/students' });
+fastify.register(attendanceRoutes,  { prefix: '/api/attendance' });
+fastify.register(feeRoutes,         { prefix: '/api/fees' });
+fastify.register(libraryRoutes,     { prefix: '/api/library' });
+fastify.register(staffRoutes,       { prefix: '/api/staff' });
+fastify.register(academicRoutes,    { prefix: '/api/academic' });
+fastify.register(hrRoutes,          { prefix: '/api/hr' });
 fastify.register(transportRoutesPlugin, { prefix: '/api/transport' });
 fastify.register(hostelRoutesPlugin,    { prefix: '/api/hostel' });
+fastify.register(admissionsRoutes,      { prefix: '/api/admissions' });
 
 // ─── Health & Info ────────────────────────────────────────────────────────────
 fastify.get('/health', async () => ({
