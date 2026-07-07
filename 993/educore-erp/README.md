@@ -303,6 +303,7 @@ Login → authenticate_user() SECURITY DEFINER (bypasses RLS for email lookup)
 - [x] Multi-tenant PostgreSQL with RLS
 - [x] JWT auth with refresh token rotation
 - [x] Role-based sidebar navigation (13 roles)
+- [x] Admissions: Application portal, Walk-in logic, Documents tracking
 - [x] HR: Staff directory, leave management, DPDP consent
 - [x] Finance: Fee ledger (append-only)
 - [x] Academic: Classes, subjects, attendance
@@ -342,7 +343,8 @@ educore-erp/
 │   ├── 003_auth_function.sql # SECURITY DEFINER authenticate_user()
 │   ├── 004_fix_rls_permissive.sql # RLS policy corrections
 │   ├── 005_refresh_tokens.sql # Server-side refresh token store
-│   └── 006_hr_extensions.sql # HR, DPDP, hostel, transport tables
+│   ├── 006_hr_extensions.sql # HR, DPDP, hostel, transport tables
+│   └── 007_admissions.sql   # Admissions tables, RLS policies
 ├── devops/infrastructure/
 │   └── kong.yml            # Kong declarative config
 ├── frontend/apps/web/      # Next.js 16 frontend (Port 3000)

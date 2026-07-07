@@ -61,7 +61,6 @@ CREATE TABLE admission_applications (
 
 ALTER TABLE admission_applications ENABLE ROW LEVEL SECURITY;
 CREATE POLICY admission_applications_isolation ON admission_applications
-  AS RESTRICTIVE
   USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
 
 CREATE INDEX idx_admissions_tenant ON admission_applications(tenant_id);
@@ -103,7 +102,6 @@ CREATE TABLE admission_documents (
 
 ALTER TABLE admission_documents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY admission_documents_isolation ON admission_documents
-  AS RESTRICTIVE
   USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
 
 CREATE INDEX idx_adm_docs_application ON admission_documents(application_id);
@@ -138,7 +136,6 @@ CREATE TABLE admission_preferences (
 
 ALTER TABLE admission_preferences ENABLE ROW LEVEL SECURITY;
 CREATE POLICY admission_preferences_isolation ON admission_preferences
-  AS RESTRICTIVE
   USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::UUID);
 
 CREATE INDEX idx_adm_prefs_application ON admission_preferences(application_id);

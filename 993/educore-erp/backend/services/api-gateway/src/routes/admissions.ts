@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db } from '../db/connection';
+import { db, withTenantContext } from '../db/connection';
 import { sql } from 'drizzle-orm';
 import crypto from 'crypto';
 
@@ -70,10 +70,7 @@ async function getTenantIdBySubdomain(subdomain: string): Promise<string | null>
 }
 
 // ─── Helper: set tenant context ───────────────────────────────────────────────
-async function withTenantCtx<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
-  await db.execute(sql`SET LOCAL app.current_tenant_id = ${tenantId}`);
-  return fn();
-}
+// We use withTenantContext from connection.ts instead.
 
 // ─── Required documents for every application ────────────────────────────────
 const REQUIRED_DOCS = ['MARK_SHEET', 'TRANSFER_CERT', 'ID_PROOF', 'PHOTO'];
@@ -127,79 +124,78 @@ export async function admissionsRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'Invalid institution subdomain' });
       }
 
-      // Generate unique APP code (retry on collision)
-      let appCode = generateAppCode();
-      let attempts = 0;
-      while (attempts < 5) {
-        const existing = await db.execute<{ app_code: string }>(
-          sql`SELECT app_code FROM admission_applications WHERE app_code = ${appCode} LIMIT 1`
-        );
-        if (existing.rows.length === 0) break;
-        appCode = generateAppCode();
-        attempts++;
-      }
+      const { applicationId, appCode: finalAppCode } = await withTenantContext(tenantId, async (tx) => {
+        let code = generateAppCode();
+        let attempts = 0;
+        while (attempts < 5) {
+          const existing = await tx.execute<{ app_code: string }>(
+            sql`SELECT app_code FROM admission_applications WHERE app_code = ${code} LIMIT 1`
+          );
+          if (existing.rows.length === 0) break;
+          code = generateAppCode();
+          attempts++;
+        }
 
-      const address = JSON.stringify({
-        street: body.street || '',
-        city: body.city || '',
-        state: body.state || '',
-        pincode: body.pincode || '',
-      });
+        const address = JSON.stringify({
+          street: body.street || '',
+          city: body.city || '',
+          state: body.state || '',
+          pincode: body.pincode || '',
+        });
 
-      // Insert application (uses postgres superuser — no RLS needed for initial insert)
-      const appResult = await db.execute<{ application_id: string }>(sql`
-        INSERT INTO admission_applications (
-          app_code, tenant_id,
-          student_first_name, student_last_name, date_of_birth, gender,
-          applying_for_grade, previous_school, previous_grade,
-          parent_name, parent_email, parent_phone, parent_relation,
-          address, source, status
-        ) VALUES (
-          ${appCode}, ${tenantId},
-          ${body.studentFirstName}, ${body.studentLastName}, ${body.dateOfBirth}, ${body.gender},
-          ${body.applyingForGrade}, ${body.previousSchool || null}, ${body.previousGrade || null},
-          ${body.parentName}, ${body.parentEmail}, ${body.parentPhone}, ${body.parentRelation || 'FATHER'},
-          ${address}::jsonb, ${body.source || 'ONLINE'}, 'SUBMITTED'
-        ) RETURNING application_id
-      `);
-
-      const applicationId = appResult.rows[0].application_id;
-
-      // Insert required document placeholders
-      for (const docType of REQUIRED_DOCS) {
-        await db.execute(sql`
-          INSERT INTO admission_documents (tenant_id, application_id, doc_type, status)
-          VALUES (${tenantId}, ${applicationId}, ${docType}, 'PENDING')
+        const appResult = await tx.execute<{ application_id: string }>(sql`
+          INSERT INTO admission_applications (
+            app_code, tenant_id,
+            student_first_name, student_last_name, date_of_birth, gender,
+            applying_for_grade, previous_school, previous_grade,
+            parent_name, parent_email, parent_phone, parent_relation,
+            address, source, status
+          ) VALUES (
+            ${code}, ${tenantId},
+            ${body.studentFirstName}, ${body.studentLastName}, ${body.dateOfBirth}, ${body.gender},
+            ${body.applyingForGrade}, ${body.previousSchool || null}, ${body.previousGrade || null},
+            ${body.parentName}, ${body.parentEmail}, ${body.parentPhone}, ${body.parentRelation || 'FATHER'},
+            ${address}::jsonb, ${body.source || 'ONLINE'}, 'SUBMITTED'
+          ) RETURNING application_id
         `);
-      }
 
-      // Insert preferences (if any)
-      await db.execute(sql`
-        INSERT INTO admission_preferences (
-          tenant_id, application_id,
-          hostel_requested, preferred_room_type,
-          transport_requested, preferred_area,
-          special_needs, additional_notes
-        ) VALUES (
-          ${tenantId}, ${applicationId},
-          ${body.hostelRequested || false}, ${body.preferredRoomType || null},
-          ${body.transportRequested || false}, ${body.preferredArea || null},
-          ${body.specialNeeds || null}, ${body.additionalNotes || null}
-        )
-      `);
+        const appId = appResult.rows[0].application_id;
 
-      // Update status to PENDING_DOCS
-      await db.execute(sql`
-        UPDATE admission_applications SET status = 'PENDING_DOCS', updated_at = NOW()
-        WHERE application_id = ${applicationId}
-      `);
+        for (const docType of REQUIRED_DOCS) {
+          await tx.execute(sql`
+            INSERT INTO admission_documents (tenant_id, application_id, doc_type, status)
+            VALUES (${tenantId}, ${appId}, ${docType}, 'PENDING')
+          `);
+        }
+
+        await tx.execute(sql`
+          INSERT INTO admission_preferences (
+            tenant_id, application_id,
+            hostel_requested, preferred_room_type,
+            transport_requested, preferred_area,
+            special_needs, additional_notes
+          ) VALUES (
+            ${tenantId}, ${appId},
+            ${body.hostelRequested || false}, ${body.preferredRoomType || null},
+            ${body.transportRequested || false}, ${body.preferredArea || null},
+            ${body.specialNeeds || null}, ${body.additionalNotes || null}
+          )
+        `);
+
+        await tx.execute(sql`
+          UPDATE admission_applications SET status = 'PENDING_DOCS', updated_at = NOW()
+          WHERE application_id = ${appId}
+        `);
+
+        return { applicationId: appId, appCode: code };
+      });
 
       return reply.status(201).send({
         success: true,
-        appCode,
+        appCode: finalAppCode,
         applicationId,
         message: 'Application submitted successfully. Please track your status using your Application Code.',
-        statusUrl: `/admissions/status?id=${appCode}`,
+        statusUrl: `/admissions/status?id=${finalAppCode}`,
       });
     }
   );
@@ -274,38 +270,39 @@ export async function admissionsRoutes(fastify: FastifyInstance) {
       const { status, grade, search, page = 1, limit = 20 } = request.query as any;
       const offset = (Number(page) - 1) * Number(limit);
 
-      await db.execute(sql`SET LOCAL app.current_tenant_id = ${tenantId}`);
+      const { rows, countResult } = await withTenantContext(tenantId, async (tx) => {
+        let query = sql`
+          SELECT a.application_id, a.app_code,
+                 a.student_first_name, a.student_last_name,
+                 a.applying_for_grade, a.parent_name, a.parent_email, a.parent_phone,
+                 a.status, a.source, a.submitted_at, a.updated_at,
+                 p.hostel_requested, p.transport_requested,
+                 (SELECT COUNT(*) FROM admission_documents d
+                  WHERE d.application_id = a.application_id AND d.status = 'PENDING') AS pending_docs
+          FROM admission_applications a
+          LEFT JOIN admission_preferences p ON p.application_id = a.application_id
+          WHERE a.tenant_id = ${tenantId}
+        `;
 
-      let query = sql`
-        SELECT a.application_id, a.app_code,
-               a.student_first_name, a.student_last_name,
-               a.applying_for_grade, a.parent_name, a.parent_email, a.parent_phone,
-               a.status, a.source, a.submitted_at, a.updated_at,
-               p.hostel_requested, p.transport_requested,
-               (SELECT COUNT(*) FROM admission_documents d
-                WHERE d.application_id = a.application_id AND d.status = 'PENDING') AS pending_docs
-        FROM admission_applications a
-        LEFT JOIN admission_preferences p ON p.application_id = a.application_id
-        WHERE a.tenant_id = ${tenantId}
-      `;
+        if (status) query = sql`${query} AND a.status = ${status}`;
+        if (grade) query = sql`${query} AND a.applying_for_grade = ${grade}`;
+        if (search) query = sql`${query} AND (
+          a.student_first_name ILIKE ${'%' + search + '%'} OR
+          a.student_last_name ILIKE ${'%' + search + '%'} OR
+          a.app_code ILIKE ${'%' + search + '%'} OR
+          a.parent_email ILIKE ${'%' + search + '%'}
+        )`;
 
-      if (status) query = sql`${query} AND a.status = ${status}`;
-      if (grade) query = sql`${query} AND a.applying_for_grade = ${grade}`;
-      if (search) query = sql`${query} AND (
-        a.student_first_name ILIKE ${'%' + search + '%'} OR
-        a.student_last_name ILIKE ${'%' + search + '%'} OR
-        a.app_code ILIKE ${'%' + search + '%'} OR
-        a.parent_email ILIKE ${'%' + search + '%'}
-      )`;
+        query = sql`${query} ORDER BY a.submitted_at DESC LIMIT ${Number(limit)} OFFSET ${offset}`;
 
-      query = sql`${query} ORDER BY a.submitted_at DESC LIMIT ${Number(limit)} OFFSET ${offset}`;
+        const countQ = sql`SELECT COUNT(*) FROM admission_applications WHERE tenant_id = ${tenantId}${status ? sql` AND status = ${status}` : sql``}`;
 
-      const countQ = sql`SELECT COUNT(*) FROM admission_applications WHERE tenant_id = ${tenantId}${status ? sql` AND status = ${status}` : sql``}`;
-
-      const [rows, countResult] = await Promise.all([
-        db.execute(query),
-        db.execute<{ count: string }>(countQ),
-      ]);
+        const [r, c] = await Promise.all([
+          tx.execute(query),
+          tx.execute<{ count: string }>(countQ),
+        ]);
+        return { rows: r, countResult: c };
+      });
 
       return reply.send({
         success: true,
@@ -327,27 +324,28 @@ export async function admissionsRoutes(fastify: FastifyInstance) {
       const { tenantId } = request.user;
       const { id } = request.params;
 
-      await db.execute(sql`SET LOCAL app.current_tenant_id = ${tenantId}`);
-
-      const [appResult, docsResult, prefsResult] = await Promise.all([
-        db.execute<any>(sql`
-          SELECT a.*, t.display_name AS tenant_name
-          FROM admission_applications a
-          JOIN tenants t ON t.tenant_id = a.tenant_id
-          WHERE a.application_id = ${id} AND a.tenant_id = ${tenantId}
-          LIMIT 1
-        `),
-        db.execute<any>(sql`
-          SELECT * FROM admission_documents
-          WHERE application_id = ${id}
-          ORDER BY doc_type
-        `),
-        db.execute<any>(sql`
-          SELECT * FROM admission_preferences
-          WHERE application_id = ${id}
-          LIMIT 1
-        `),
-      ]);
+      const { appResult, docsResult, prefsResult } = await withTenantContext(tenantId, async (tx) => {
+        const [a, d, p] = await Promise.all([
+          tx.execute<any>(sql`
+            SELECT a.*, t.display_name AS tenant_name
+            FROM admission_applications a
+            JOIN tenants t ON t.tenant_id = a.tenant_id
+            WHERE a.application_id = ${id} AND a.tenant_id = ${tenantId}
+            LIMIT 1
+          `),
+          tx.execute<any>(sql`
+            SELECT * FROM admission_documents
+            WHERE application_id = ${id}
+            ORDER BY doc_type
+          `),
+          tx.execute<any>(sql`
+            SELECT * FROM admission_preferences
+            WHERE application_id = ${id}
+            LIMIT 1
+          `),
+        ]);
+        return { appResult: a, docsResult: d, prefsResult: p };
+      });
 
       if (!appResult.rows[0]) {
         return reply.status(404).send({ success: false, error: 'Application not found' });
@@ -378,78 +376,76 @@ export async function admissionsRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'action must be APPROVE or REJECT' });
       }
 
-      await db.execute(sql`SET LOCAL app.current_tenant_id = ${tenantId}`);
-
-      const existing = await db.execute<{ status: string; student_first_name: string; student_last_name: string; date_of_birth: string; gender: string; applying_for_grade: string; parent_email: string }>(sql`
-        SELECT status, student_first_name, student_last_name, date_of_birth, gender,
-               applying_for_grade, parent_email
-        FROM admission_applications
-        WHERE application_id = ${id} AND tenant_id = ${tenantId}
-        LIMIT 1
-      `);
-
-      if (!existing.rows[0]) {
-        return reply.status(404).send({ success: false, error: 'Application not found' });
-      }
-
-      const newStatus = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
-
-      await db.execute(sql`
-        UPDATE admission_applications
-        SET status = ${newStatus},
-            reviewed_by = ${userId}::uuid,
-            reviewed_at = NOW(),
-            rejection_reason = ${reason || null},
-            updated_at = NOW()
-        WHERE application_id = ${id} AND tenant_id = ${tenantId}
-      `);
-
-      // On approval: provision student record automatically
-      if (action === 'APPROVE') {
-        const app = existing.rows[0];
-        const studentId = crypto.randomUUID();
-
-        // Find or create a class for the grade
-        const classResult = await db.execute<{ class_id: string }>(sql`
-          SELECT class_id FROM classes
-          WHERE tenant_id = ${tenantId} AND grade = ${app.applying_for_grade}
+      const result = await withTenantContext(tenantId, async (tx) => {
+        const existing = await tx.execute<{ status: string; student_first_name: string; student_last_name: string; date_of_birth: string; gender: string; applying_for_grade: string; parent_email: string }>(sql`
+          SELECT status, student_first_name, student_last_name, date_of_birth, gender,
+                 applying_for_grade, parent_email
+          FROM admission_applications
+          WHERE application_id = ${id} AND tenant_id = ${tenantId}
           LIMIT 1
         `);
-        const classId = classResult.rows[0]?.class_id;
 
-        if (classId) {
-          // Auto-generate roll number: ADM-{year}-{last 4 of studentId}
-          const rollNumber = `ADM-${new Date().getFullYear()}-${studentId.slice(-4).toUpperCase()}`;
+        if (!existing.rows[0]) return { error: 'Application not found' };
 
-          await db.execute(sql`
-            INSERT INTO students (
-              student_id, tenant_id, first_name, last_name,
-              date_of_birth, gender, class_id, roll_number,
-              parent_email, academic_year
-            ) VALUES (
-              ${studentId}::uuid, ${tenantId},
-              ${app.student_first_name}, ${app.student_last_name},
-              ${app.date_of_birth}, ${app.gender}, ${classId}::uuid,
-              ${rollNumber}, ${app.parent_email}, '2026-27'
-            )
-            ON CONFLICT (tenant_id, class_id, roll_number) DO NOTHING
+        const newStatus = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+
+        await tx.execute(sql`
+          UPDATE admission_applications
+          SET status = ${newStatus},
+              reviewed_by = ${userId}::uuid,
+              reviewed_at = NOW(),
+              rejection_reason = ${reason || null},
+              updated_at = NOW()
+          WHERE application_id = ${id} AND tenant_id = ${tenantId}
+        `);
+
+        if (action === 'APPROVE') {
+          const app = existing.rows[0];
+          const studentId = crypto.randomUUID();
+
+          const classResult = await tx.execute<{ class_id: string }>(sql`
+            SELECT class_id FROM classes
+            WHERE tenant_id = ${tenantId} AND grade = ${app.applying_for_grade}
+            LIMIT 1
           `);
+          const classId = classResult.rows[0]?.class_id;
 
-          // Link student_id back to application
-          await db.execute(sql`
-            UPDATE admission_applications
-            SET student_id = ${studentId}::uuid, status = 'COMPLETED', updated_at = NOW()
-            WHERE application_id = ${id}
-          `);
+          if (classId) {
+            const rollNumber = `ADM-${new Date().getFullYear()}-${studentId.slice(-4).toUpperCase()}`;
+
+            await tx.execute(sql`
+              INSERT INTO students (
+                student_id, tenant_id, first_name, last_name,
+                date_of_birth, gender, class_id, roll_number,
+                parent_email, academic_year
+              ) VALUES (
+                ${studentId}::uuid, ${tenantId},
+                ${app.student_first_name}, ${app.student_last_name},
+                ${app.date_of_birth}, ${app.gender}, ${classId}::uuid,
+                ${rollNumber}, ${app.parent_email}, '2026-27'
+              )
+              ON CONFLICT (tenant_id, class_id, roll_number) DO NOTHING
+            `);
+
+            await tx.execute(sql`
+              UPDATE admission_applications
+              SET student_id = ${studentId}::uuid, status = 'COMPLETED', updated_at = NOW()
+              WHERE application_id = ${id}
+            `);
+          }
         }
-      }
+
+        return { success: true, newStatus };
+      });
+
+      if (result.error) return reply.status(404).send({ success: false, error: result.error });
 
       return reply.send({
         success: true,
         message: action === 'APPROVE'
           ? 'Application approved and student record created.'
           : 'Application rejected.',
-        status: newStatus,
+        status: result.newStatus,
       });
     }
   );
@@ -463,41 +459,40 @@ export async function admissionsRoutes(fastify: FastifyInstance) {
       const { id } = request.params;
       const { docType, status, fileName, fileSizeBytes, mimeType, storageKey, rejectionNote } = request.body;
 
-      await db.execute(sql`SET LOCAL app.current_tenant_id = ${tenantId}`);
-
-      await db.execute(sql`
-        UPDATE admission_documents
-        SET status = ${status},
-            file_name = ${fileName || null},
-            file_size_bytes = ${fileSizeBytes || null},
-            mime_type = ${mimeType || null},
-            storage_key = ${storageKey || null},
-            rejection_note = ${rejectionNote || null},
-            verified_by = ${status === 'VERIFIED' ? userId + '::uuid' : null},
-            verified_at = ${status === 'VERIFIED' ? sql`NOW()` : null},
-            updated_at = NOW()
-        WHERE application_id = ${id}
-          AND doc_type = ${docType}
-          AND tenant_id = ${tenantId}
-      `);
-
-      // Check if all required docs are received → update application status
-      const docsStatus = await db.execute<{ status: string }>(sql`
-        SELECT status FROM admission_documents
-        WHERE application_id = ${id}
-          AND doc_type = ANY(ARRAY['MARK_SHEET','TRANSFER_CERT','ID_PROOF','PHOTO'])
-      `);
-
-      const allReceived = docsStatus.rows.every(d => d.status !== 'PENDING');
-      if (allReceived) {
-        await db.execute(sql`
-          UPDATE admission_applications
-          SET status = 'DOCS_RECEIVED', updated_at = NOW()
+      await withTenantContext(tenantId, async (tx) => {
+        await tx.execute(sql`
+          UPDATE admission_documents
+          SET status = ${status},
+              file_name = ${fileName || null},
+              file_size_bytes = ${fileSizeBytes || null},
+              mime_type = ${mimeType || null},
+              storage_key = ${storageKey || null},
+              rejection_note = ${rejectionNote || null},
+              verified_by = ${status === 'VERIFIED' ? userId + '::uuid' : null},
+              verified_at = ${status === 'VERIFIED' ? sql`NOW()` : null},
+              updated_at = NOW()
           WHERE application_id = ${id}
-            AND status = 'PENDING_DOCS'
+            AND doc_type = ${docType}
             AND tenant_id = ${tenantId}
         `);
-      }
+
+        const docsStatus = await tx.execute<{ status: string }>(sql`
+          SELECT status FROM admission_documents
+          WHERE application_id = ${id}
+            AND doc_type = ANY(ARRAY['MARK_SHEET','TRANSFER_CERT','ID_PROOF','PHOTO'])
+        `);
+
+        const allReceived = docsStatus.rows.every(d => d.status !== 'PENDING');
+        if (allReceived) {
+          await tx.execute(sql`
+            UPDATE admission_applications
+            SET status = 'DOCS_RECEIVED', updated_at = NOW()
+            WHERE application_id = ${id}
+              AND status = 'PENDING_DOCS'
+              AND tenant_id = ${tenantId}
+          `);
+        }
+      });
 
       return reply.send({ success: true, message: 'Document status updated' });
     }
@@ -517,63 +512,65 @@ export async function admissionsRoutes(fastify: FastifyInstance) {
       const body: ApplyBody = request.body;
       const tenantId = request.user.tenantId;
 
-      let appCode = generateAppCode();
-      let attempts = 0;
-      while (attempts < 5) {
-        const existing = await db.execute<{ app_code: string }>(
-          sql`SELECT app_code FROM admission_applications WHERE app_code = ${appCode} LIMIT 1`
-        );
-        if (existing.rows.length === 0) break;
-        appCode = generateAppCode();
-        attempts++;
-      }
+      const { applicationId, appCode: finalAppCode } = await withTenantContext(tenantId, async (tx) => {
+        let code = generateAppCode();
+        let attempts = 0;
+        while (attempts < 5) {
+          const existing = await tx.execute<{ app_code: string }>(
+            sql`SELECT app_code FROM admission_applications WHERE app_code = ${code} LIMIT 1`
+          );
+          if (existing.rows.length === 0) break;
+          code = generateAppCode();
+          attempts++;
+        }
 
-      const address = JSON.stringify({
-        street: body.street || '', city: body.city || '',
-        state: body.state || '', pincode: body.pincode || '',
-      });
+        const address = JSON.stringify({
+          street: body.street || '', city: body.city || '',
+          state: body.state || '', pincode: body.pincode || '',
+        });
 
-      await db.execute(sql`SET LOCAL app.current_tenant_id = ${tenantId}`);
-
-      const appResult = await db.execute<{ application_id: string }>(sql`
-        INSERT INTO admission_applications (
-          app_code, tenant_id,
-          student_first_name, student_last_name, date_of_birth, gender,
-          applying_for_grade, previous_school, previous_grade,
-          parent_name, parent_email, parent_phone, parent_relation,
-          address, source, status
-        ) VALUES (
-          ${appCode}, ${tenantId},
-          ${body.studentFirstName}, ${body.studentLastName}, ${body.dateOfBirth}, ${body.gender},
-          ${body.applyingForGrade}, ${body.previousSchool || null}, ${body.previousGrade || null},
-          ${body.parentName}, ${body.parentEmail}, ${body.parentPhone}, ${body.parentRelation || 'FATHER'},
-          ${address}::jsonb, 'WALK_IN', 'SUBMITTED'
-        ) RETURNING application_id
-      `);
-
-      const applicationId = appResult.rows[0].application_id;
-
-      for (const docType of REQUIRED_DOCS) {
-        await db.execute(sql`
-          INSERT INTO admission_documents (tenant_id, application_id, doc_type, status)
-          VALUES (${tenantId}, ${applicationId}, ${docType}, 'PENDING')
+        const appResult = await tx.execute<{ application_id: string }>(sql`
+          INSERT INTO admission_applications (
+            app_code, tenant_id,
+            student_first_name, student_last_name, date_of_birth, gender,
+            applying_for_grade, previous_school, previous_grade,
+            parent_name, parent_email, parent_phone, parent_relation,
+            address, source, status
+          ) VALUES (
+            ${code}, ${tenantId},
+            ${body.studentFirstName}, ${body.studentLastName}, ${body.dateOfBirth}, ${body.gender},
+            ${body.applyingForGrade}, ${body.previousSchool || null}, ${body.previousGrade || null},
+            ${body.parentName}, ${body.parentEmail}, ${body.parentPhone}, ${body.parentRelation || 'FATHER'},
+            ${address}::jsonb, 'WALK_IN', 'SUBMITTED'
+          ) RETURNING application_id
         `);
-      }
 
-      await db.execute(sql`
-        INSERT INTO admission_preferences (
-          tenant_id, application_id, hostel_requested, transport_requested
-        ) VALUES (${tenantId}, ${applicationId}, ${body.hostelRequested || false}, ${body.transportRequested || false})
-      `);
+        const appId = appResult.rows[0].application_id;
 
-      await db.execute(sql`
-        UPDATE admission_applications SET status = 'PENDING_DOCS', updated_at = NOW()
-        WHERE application_id = ${applicationId}
-      `);
+        for (const docType of REQUIRED_DOCS) {
+          await tx.execute(sql`
+            INSERT INTO admission_documents (tenant_id, application_id, doc_type, status)
+            VALUES (${tenantId}, ${appId}, ${docType}, 'PENDING')
+          `);
+        }
+
+        await tx.execute(sql`
+          INSERT INTO admission_preferences (
+            tenant_id, application_id, hostel_requested, transport_requested
+          ) VALUES (${tenantId}, ${appId}, ${body.hostelRequested || false}, ${body.transportRequested || false})
+        `);
+
+        await tx.execute(sql`
+          UPDATE admission_applications SET status = 'PENDING_DOCS', updated_at = NOW()
+          WHERE application_id = ${appId}
+        `);
+
+        return { applicationId: appId, appCode: code };
+      });
 
       return reply.status(201).send({
         success: true,
-        appCode,
+        appCode: finalAppCode,
         applicationId,
         message: 'Walk-in application created successfully.',
       });
