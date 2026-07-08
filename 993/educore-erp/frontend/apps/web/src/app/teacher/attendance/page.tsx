@@ -10,12 +10,18 @@ interface Student {
   firstName: string;
   lastName: string;
   rollNumber: string;
+  classId: string;
+}
+
+interface Class {
+  id: string;
   grade: string;
   section: string;
 }
 
 export default function TeacherAttendancePage() {
-  const [selectedClass, setSelectedClass] = useState('10-A');
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Record<string, 'PRESENT' | 'ABSENT' | 'LATE'>>({});
@@ -24,20 +30,48 @@ export default function TeacherAttendancePage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Fetch students for class
+  // Fetch classes on mount
+  useEffect(() => {
+    async function fetchClasses() {
+      try {
+        const token = localStorage.getItem('educore_token');
+        const res = await fetch(`http://localhost:4000/api/academic/classes`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.success && data.data.length > 0) {
+          setClasses(data.data);
+          setSelectedClassId(data.data[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to fetch classes:', err);
+      }
+    }
+    fetchClasses();
+  }, []);
+
+  // Fetch students for selected class
   useEffect(() => {
     async function fetchStudents() {
+      if (!selectedClassId) return;
       setLoading(true);
       try {
         const token = localStorage.getItem('educore_token');
-        const res = await fetch(`http://localhost:4000/api/students?limit=100`, {
+        const res = await fetch(`http://localhost:4000/api/students?limit=500`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
         if (data.success) {
-          // Filter by selected class (grade and section)
-          const [grade, section] = selectedClass.split('-');
-          const filtered = data.data.filter((s: Student) => s.grade === grade && s.section === section);
+          // Filter by selected class UUID
+          const filtered = data.data.filter((s: Student) => s.classId === selectedClassId);
+          
+          // Sort by roll number numerically if possible
+          filtered.sort((a: Student, b: Student) => {
+            const numA = parseInt(a.rollNumber.replace(/\D/g, ''), 10) || 0;
+            const numB = parseInt(b.rollNumber.replace(/\D/g, ''), 10) || 0;
+            return numA - numB;
+          });
+
           setStudents(filtered);
           
           // Initialise attendance as all PRESENT
@@ -54,7 +88,7 @@ export default function TeacherAttendancePage() {
       }
     }
     fetchStudents();
-  }, [selectedClass]);
+  }, [selectedClassId]);
 
   const toggleStatus = (studentId: string, status: 'PRESENT' | 'ABSENT' | 'LATE') => {
     setAttendance((prev) => ({ ...prev, [studentId]: status }));
@@ -66,11 +100,13 @@ export default function TeacherAttendancePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedClassId) return;
+    
     setSaving(true);
     setMessage(null);
 
     const payload = {
-      classId: `cls-${selectedClass.toLowerCase().replace('-', '')}`,
+      classId: selectedClassId,
       date,
       records: Object.entries(attendance).map(([studentId, status]) => ({
         studentId,
@@ -109,6 +145,8 @@ export default function TeacherAttendancePage() {
   const absentCount = Object.values(attendance).filter((s) => s === 'ABSENT').length;
   const lateCount = Object.values(attendance).filter((s) => s === 'LATE').length;
 
+  const selectedClassDetails = classes.find(c => c.id === selectedClassId);
+
   return (
     <DashboardShell pageTitle="Attendance Capture" requiredRole="TEACHER">
       <div className="space-y-6 max-w-5xl mx-auto fade-in-up">
@@ -120,13 +158,13 @@ export default function TeacherAttendancePage() {
             <div>
               <label className="block text-slate-400 text-xs mb-1.5 font-medium">Select Class</label>
               <select
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 w-40"
               >
-                <option value="10-A">Class 10 A</option>
-                <option value="10-B">Class 10 B</option>
-                <option value="9-A">Class 9 A</option>
+                {classes.map(c => (
+                  <option key={c.id} value={c.id}>Class {c.grade}-{c.section}</option>
+                ))}
               </select>
             </div>
 
@@ -165,7 +203,7 @@ export default function TeacherAttendancePage() {
               </div>
             ) : students.length === 0 ? (
               <div className="p-20 text-center text-slate-400 text-sm">
-                No students enrolled in Class {selectedClass}.
+                No students enrolled in Class {selectedClassDetails ? `${selectedClassDetails.grade}-${selectedClassDetails.section}` : selectedClassId}.
               </div>
             ) : (
               <div className="divide-y divide-slate-800/60">

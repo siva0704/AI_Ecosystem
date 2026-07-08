@@ -266,7 +266,7 @@ export const busAssignments = pgTable('bus_assignments', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
-// ─── Refresh Tokens Table ────────────────────────────────────────────────────
+// ── Refresh Tokens Table ───────────────────────────────────────────────────
 export const refreshTokens = pgTable('refresh_tokens', {
   id: uuid('token_id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -278,4 +278,78 @@ export const refreshTokens = pgTable('refresh_tokens', {
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   userAgent: varchar('user_agent', { length: 512 }),
   ipAddress: varchar('ip_address', { length: 50 }),
+});
+
+// ── TC Requests Table ──────────────────────────────────────────────────────
+export const tcRequests = pgTable('tc_requests', {
+  id: uuid('request_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  studentId: uuid('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+  reason: varchar('reason', { length: 1000 }).notNull(),
+  status: varchar('status', { length: 50 }).default('PENDING').notNull(),
+  requestedBy: uuid('requested_by').notNull().references(() => users.id),
+  approvedBy: uuid('approved_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// ── Grievances Table ───────────────────────────────────────────────────────
+export const grievances = pgTable('grievances', {
+  id: uuid('grievance_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  subject: varchar('subject', { length: 255 }).notNull(),
+  description: varchar('description', { length: 4000 }).notNull(),
+  category: varchar('category', { length: 100 }).notNull(),
+  status: varchar('status', { length: 50 }).default('OPEN').notNull(),
+  submittedBy: uuid('submitted_by').notNull().references(() => users.id),
+  resolution: varchar('resolution', { length: 4000 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// ── Assets & Vendors Table ─────────────────────────────────────────────────
+export const vendors = pgTable('vendors', {
+  id: uuid('vendor_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  contactEmail: varchar('contact_email', { length: 255 }),
+  contactPhone: varchar('contact_phone', { length: 50 }),
+  servicesProvided: varchar('services_provided', { length: 1000 }),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+export const assets = pgTable('assets', {
+  id: uuid('asset_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  category: varchar('category', { length: 100 }).notNull(),
+  vendorId: uuid('vendor_id').references(() => vendors.id),
+  purchaseDate: date('purchase_date'),
+  valuePaise: bigint('value_paise', { mode: 'number' }),
+  status: varchar('status', { length: 50 }).default('ACTIVE').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ── Exam Results & Corrections ─────────────────────────────────────────────
+export const examResults = pgTable('exam_results', {
+  id: uuid('result_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  studentId: uuid('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+  subjectId: uuid('subject_id').notNull().references(() => subjects.id),
+  examName: varchar('exam_name', { length: 200 }).notNull(),
+  marksObtained: decimal('marks_obtained', { precision: 5, scale: 2 }).notNull(),
+  maxMarks: smallint('max_marks').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+export const examCorrections = pgTable('exam_corrections', {
+  id: uuid('correction_id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  resultId: uuid('result_id').notNull().references(() => examResults.id, { onDelete: 'cascade' }),
+  reason: varchar('reason', { length: 1000 }).notNull(),
+  status: varchar('status', { length: 50 }).default('PENDING').notNull(),
+  requestedBy: uuid('requested_by').notNull().references(() => users.id),
+  reviewedBy: uuid('reviewed_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });

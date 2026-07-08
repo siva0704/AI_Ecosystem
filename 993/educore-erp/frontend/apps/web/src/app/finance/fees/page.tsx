@@ -5,269 +5,285 @@ import { DashboardShell } from '@/components/layout/DashboardShell';
 import { AlertBanner } from '@/components/ui/DashboardWidgets';
 import { API_BASE } from '@/lib/types/auth';
 
-interface Student {
+interface Transaction {
   id: string;
-  firstName: string;
-  lastName: string;
-  rollNumber: string;
-  grade: string;
-  section: string;
-}
-
-interface FeeTransaction {
-  id: string;
-  fee_head: string;
+  studentId: string;
+  feeHead: string;
+  amount_rupees: string;
   amount_display: string;
-  payment_status: 'PENDING' | 'INITIATED' | 'PROCESSING' | 'CAPTURED' | 'FAILED' | 'REFUNDED';
-  payment_mode: string;
-  created_at: string;
+  currency: string;
+  paymentStatus: string;
+  paymentMode: string;
+  createdAt: string;
+  studentFirstName: string;
+  studentLastName: string;
+  rollNumber: string;
 }
 
-export default function FeeCollectionPage() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [search, setSearch] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [history, setHistory] = useState<FeeTransaction[]>([]);
-  const [feeHeads, setFeeHeads] = useState<Record<string, { amount_paise: number; description: string }>>({});
-  const [selectedFeeHead, setSelectedFeeHead] = useState('');
-  const [paymentMode, setPaymentMode] = useState('UPI');
-  const [submitting, setSubmitting] = useState(false);
+export default function FeesDashboardPage() {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [stats, setStats] = useState({ totalCollected: 0, pendingCount: 0 });
+  const [students, setStudents] = useState<any[]>([]);
+  const [feeStructures, setFeeStructures] = useState<Record<string, any>>({});
+  
+  const [searchStudent, setSearchStudent] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
+
+  // Forms state
+  const [paymentForm, setPaymentForm] = useState({ feeHeadId: 'annual-tuition', paymentMode: 'UPI' });
+  const [concessionForm, setConcessionForm] = useState({ amountRupees: '', reason: '' });
+
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Fetch student roster
-  useEffect(() => {
-    async function fetchStudents() {
-      try {
-        const token = localStorage.getItem('educore_token');
-        const res = await fetch(`${API_BASE}/api/academic/students?limit=50&search=${search}`, {
-          headers: { Authorization: `Bearer ${token}` },
+  const loadData = async () => {
+    try {
+      const token = localStorage.getItem('educore_token');
+      
+      const tRes = await fetch(`${API_BASE}/api/fees`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const tData = await tRes.json();
+      if (tData.success) {
+        setTransactions(tData.data);
+        setStats({
+          totalCollected: tData.meta.total_collected_paise / 100,
+          pendingCount: tData.meta.pending_count,
         });
-        const data = await res.json();
-        if (data.success) {
-          setStudents(data.data);
-        }
-      } catch (err) {
-        console.error('Error fetching students:', err);
       }
-    }
-    const delayDebounce = setTimeout(() => {
-      fetchStudents();
-    }, 300);
-    return () => clearTimeout(delayDebounce);
-  }, [search]);
 
-  // Fetch Fee structures & Student history
-  useEffect(() => {
-    async function fetchStructures() {
-      try {
-        const token = localStorage.getItem('educore_token');
-        const res = await fetch(`${API_BASE}/api/fees/structures`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success) {
-          setFeeHeads(data.data);
-          setSelectedFeeHead(Object.keys(data.data)[0] || '');
-        }
-      } catch (err) {
-        console.error(err);
-      }
+      const fRes = await fetch(`${API_BASE}/api/fees/structures`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const fData = await fRes.json();
+      if (fData.success) setFeeStructures(fData.data);
+    } catch (err) {
+      console.error(err);
     }
-    fetchStructures();
-  }, []);
+  };
+
+  useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
-    if (!selectedStudent) return;
-    const studentId = selectedStudent.id;
-    async function fetchHistory() {
-      try {
-        const token = localStorage.getItem('educore_token');
-        const res = await fetch(`${API_BASE}/api/fees?studentId=${studentId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success) {
-          setHistory(data.data);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    fetchHistory();
-  }, [selectedStudent]);
+    const fetchStudents = async () => {
+      const token = localStorage.getItem('educore_token');
+      const sRes = await fetch(`${API_BASE}/api/students?limit=20&search=${searchStudent}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const sData = await sRes.json();
+      if (sData.success) setStudents(sData.data);
+    };
+    const timer = setTimeout(fetchStudents, 300);
+    return () => clearTimeout(timer);
+  }, [searchStudent]);
 
-  const handleCollect = async (e: React.FormEvent) => {
+  const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudent) return;
-    setSubmitting(true);
-    setMessage(null);
+    setLoading(true); setMessage(null);
 
     try {
       const token = localStorage.getItem('educore_token');
       const res = await fetch(`${API_BASE}/api/fees/initiate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           studentId: selectedStudent.id,
-          feeHeadId: selectedFeeHead,
-          paymentMode,
+          ...paymentForm
         }),
       });
-
       const data = await res.json();
       if (data.success) {
-        setMessage({ type: 'success', text: 'Transaction recorded successfully in ledger.' });
-        // Refresh history
-        const updatedRes = await fetch(`${API_BASE}/api/fees?studentId=${selectedStudent.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const updatedData = await updatedRes.json();
-        if (updatedData.success) {
-          setHistory(updatedData.data);
-        }
+        setMessage({ type: 'success', text: 'Payment captured successfully.' });
+        loadData();
       } else {
-        setMessage({ type: 'error', text: data.error || 'Failed to record transaction' });
+        setMessage({ type: 'error', text: data.error });
       }
     } catch (err) {
       setMessage({ type: 'error', text: 'Connection failed.' });
     } finally {
-      setSubmitting(false);
+      setLoading(false);
+    }
+  };
+
+  const handleConcession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent || !concessionForm.amountRupees) return;
+    setLoading(true); setMessage(null);
+
+    try {
+      const token = localStorage.getItem('educore_token');
+      const res = await fetch(`${API_BASE}/api/fees/concession`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          studentId: selectedStudent.id,
+          amountPaise: Math.round(parseFloat(concessionForm.amountRupees) * 100),
+          reason: concessionForm.reason,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'Concession applied successfully.' });
+        loadData();
+      } else {
+        setMessage({ type: 'error', text: data.error });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Connection failed.' });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <DashboardShell pageTitle="Fee Collection & Cash Counter" requiredRole="ACCOUNTANT">
+    <DashboardShell pageTitle="Finance Dashboard" requiredRole="ACCOUNTANT">
       <div className="space-y-6 max-w-6xl mx-auto fade-in-up">
         {message && <AlertBanner type={message.type} message={message.text} />}
 
-        <div className="grid md:grid-cols-3 gap-6">
-          {/* Column 1: Student Search */}
-          <div className="glass rounded-2xl p-5 space-y-4 h-fit">
-            <h3 className="text-white font-bold text-sm">Find Student</h3>
-            <input
-              type="text"
-              placeholder="🔍 Search name or roll number..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-500"
-            />
-
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {students.map((student) => (
-                <button
-                  key={student.id}
-                  onClick={() => {
-                    setSelectedStudent(student);
-                    setMessage(null);
-                  }}
-                  className={`w-full text-left p-3 rounded-xl transition flex justify-between items-center ${
-                    selectedStudent?.id === student.id ? 'bg-amber-500/20 border border-amber-500/30' : 'bg-slate-800/40 hover:bg-slate-800/80 border border-transparent'
-                  }`}
-                >
-                  <div>
-                    <p className="text-white text-sm font-medium">{student.firstName} {student.lastName}</p>
-                    <p className="text-slate-500 text-xs">{student.rollNumber} · Class {student.grade}-{student.section}</p>
-                  </div>
-                  <span className="text-slate-400 text-xs">➔</span>
-                </button>
-              ))}
-            </div>
+        <div className="grid md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+            <h3 className="text-slate-400 text-xs font-semibold mb-1 uppercase tracking-wider">Total Collected</h3>
+            <p className="text-2xl font-bold text-white">₹{stats.totalCollected.toLocaleString('en-IN')}</p>
           </div>
+        </div>
 
-          {/* Column 2: Collect Fee / Create Transaction */}
-          <div className="glass rounded-2xl p-5 space-y-4">
-            <h3 className="text-white font-bold text-sm">New Payment Record</h3>
-            {selectedStudent ? (
-              <form onSubmit={handleCollect} className="space-y-4">
-                <div className="p-3 bg-slate-900/60 rounded-xl">
-                  <span className="text-slate-400 text-xs block">Paying Student</span>
-                  <span className="text-white font-semibold text-sm">{selectedStudent.firstName} {selectedStudent.lastName}</span>
-                  <span className="text-slate-500 text-xs block font-mono">{selectedStudent.rollNumber}</span>
-                </div>
-
-                <div>
-                  <label className="block text-slate-400 text-xs mb-1.5 font-medium">Select Fee Head</label>
-                  <select
-                    value={selectedFeeHead}
-                    onChange={(e) => setSelectedFeeHead(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-500"
+        <div className="grid md:grid-cols-3 gap-6">
+          {/* Panel 1: Payment & Concession */}
+          <div className="glass rounded-2xl p-5 space-y-6">
+            <div>
+              <label className="block text-slate-400 text-xs mb-1.5 font-medium">Select Student</label>
+              <input
+                type="text"
+                placeholder="🔍 Type Student Name..."
+                value={searchStudent}
+                onChange={(e) => setSearchStudent(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 mb-2"
+              />
+              <div className="max-h-[120px] overflow-y-auto space-y-1.5">
+                {students.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelectedStudent(s)}
+                    className={`w-full text-left p-2 rounded-lg text-xs transition border ${
+                      selectedStudent?.id === s.id ? 'bg-indigo-500/20 border-indigo-500/30 text-white' : 'bg-slate-800/40 hover:bg-slate-800/80 border-transparent text-slate-300'
+                    }`}
                   >
-                    {Object.entries(feeHeads).map(([key, head]) => (
-                      <option key={key} value={key}>{head.description}</option>
+                    {s.firstName} {s.lastName} ({s.rollNumber})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-800 pt-4">
+              <h3 className="text-white font-bold text-sm mb-4">Capture Payment</h3>
+              <form onSubmit={handlePayment} className="space-y-4">
+                <div>
+                  <label className="block text-slate-400 text-xs mb-1.5 font-medium">Fee Head</label>
+                  <select
+                    value={paymentForm.feeHeadId}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, feeHeadId: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500"
+                  >
+                    {Object.entries(feeStructures).map(([id, val]: any) => (
+                      <option key={id} value={id}>{val.description}</option>
                     ))}
                   </select>
                 </div>
-
                 <div>
                   <label className="block text-slate-400 text-xs mb-1.5 font-medium">Payment Mode</label>
                   <select
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-500"
+                    value={paymentForm.paymentMode}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, paymentMode: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="UPI">UPI (GPay/PhonePe)</option>
-                    <option value="CARD">Debit / Credit Card</option>
-                    <option value="NEFT">Bank Transfer (NEFT/RTGS)</option>
-                    <option value="CASH">Cash Over Counter</option>
+                    <option value="UPI">UPI</option>
+                    <option value="CARD">Credit/Debit Card</option>
+                    <option value="BANK_TRANSFER">Bank Transfer</option>
+                    <option value="CASH">Cash</option>
                   </select>
                 </div>
-
-                <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl">
-                  <p className="text-amber-400 text-xs leading-relaxed">
-                    ⚠️ <strong>Audit Policy:</strong> Submitting this payment creates an immutable ledger entry. Ledger modifications or deletions are blocked at database engine level.
-                  </p>
-                </div>
-
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="w-full bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
+                  disabled={loading || !selectedStudent}
+                  className="w-full bg-green-600 hover:bg-green-500 disabled:bg-slate-800 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
                 >
-                  {submitting ? 'Recording...' : 'Record Receipt'}
+                  Capture Payment
                 </button>
               </form>
-            ) : (
-              <div className="text-center p-10 text-slate-500 text-xs">
-                Select a student from the panel to collect payments.
-              </div>
-            )}
+            </div>
+
+            <div className="border-t border-slate-800 pt-4">
+              <h3 className="text-white font-bold text-sm mb-4">Grant Concession</h3>
+              <form onSubmit={handleConcession} className="space-y-4">
+                <div>
+                  <label className="block text-slate-400 text-xs mb-1.5 font-medium">Amount (₹)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={concessionForm.amountRupees}
+                    onChange={(e) => setConcessionForm({ ...concessionForm, amountRupees: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-xs mb-1.5 font-medium">Reason</label>
+                  <input
+                    type="text"
+                    required
+                    minLength={5}
+                    value={concessionForm.reason}
+                    onChange={(e) => setConcessionForm({ ...concessionForm, reason: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading || !selectedStudent}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
+                >
+                  Apply Concession
+                </button>
+              </form>
+            </div>
           </div>
 
-          {/* Column 3: Ledger History */}
-          <div className="glass rounded-2xl p-5 space-y-4">
-            <h3 className="text-white font-bold text-sm">Receipt Ledger History</h3>
-            {selectedStudent ? (
-              <div className="space-y-2 max-h-[350px] overflow-y-auto">
-                {history.length === 0 ? (
-                  <p className="text-slate-500 text-xs text-center py-10">No past transactions found.</p>
-                ) : (
-                  history.map((tx) => (
-                    <div key={tx.id} className="p-3 bg-slate-900/60 rounded-xl space-y-1">
-                      <div className="flex justify-between items-center">
-                        <span className="text-white text-xs font-semibold">{tx.fee_head}</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                          tx.payment_status === 'CAPTURED' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'
-                        }`}>{tx.payment_status}</span>
-                      </div>
-                      <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>{tx.amount_display}</span>
-                        <span className="font-mono">{tx.payment_mode}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 font-mono">
-                        {new Date(tx.created_at).toLocaleString()}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : (
-              <div className="text-center p-10 text-slate-500 text-xs">
-                Select student to inspect transaction trails.
-              </div>
-            )}
+          {/* Panel 2 & 3: Transaction Ledger */}
+          <div className="md:col-span-2 glass rounded-2xl p-5 space-y-4">
+            <h3 className="text-white font-bold text-sm">Transaction Ledger (Immutable)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-xs uppercase">
+                    <th className="py-2.5">Date</th>
+                    <th className="py-2.5">Student</th>
+                    <th className="py-2.5">Particulars</th>
+                    <th className="py-2.5">Mode</th>
+                    <th className="py-2.5 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {transactions.map((txn) => (
+                    <tr key={txn.id} className="text-xs text-slate-300 hover:bg-slate-900/10">
+                      <td className="py-3">{new Date(txn.createdAt).toLocaleDateString()}</td>
+                      <td className="py-3 font-medium text-slate-200">{txn.studentFirstName} {txn.studentLastName} ({txn.rollNumber})</td>
+                      <td className="py-3 truncate max-w-[200px]">{txn.feeHead}</td>
+                      <td className="py-3 font-mono text-[10px]">{txn.paymentMode}</td>
+                      <td className={`py-3 text-right font-bold ${txn.amount_rupees.startsWith('-') ? 'text-indigo-400' : 'text-green-400'}`}>
+                        {txn.amount_display}
+                      </td>
+                    </tr>
+                  ))}
+                  {transactions.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-500">No transactions recorded.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

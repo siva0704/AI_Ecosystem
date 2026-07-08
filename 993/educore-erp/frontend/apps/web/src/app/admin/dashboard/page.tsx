@@ -63,11 +63,11 @@ export default function AdminDashboard() {
 
         <div>
           <h2 className="text-white font-semibold text-base mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <QuickAction label="Student Directory" icon="🎓" href="/admin/students" />
             <QuickAction label="Academic Setup" icon="📚" href="/admin/academic" />
-            <QuickAction label="Add Staff" icon="➕" href="/hr/staff" />
-            <QuickAction label="Fee Structures" icon="💳" href="/finance/fees" />
-            <QuickAction label="Campus Setup" icon="🏫" href="/admin/campus" />
+            <QuickAction label="Add Staff" icon="👥" href="/hr/staff" />
+            <QuickAction label="Fee Structures" icon="💰" href="/finance/fees" />
             <QuickAction label="Reports" icon="📊" href="/admin/reports" />
             <QuickAction label="Settings" icon="⚙️" href="/admin/settings" />
           </div>

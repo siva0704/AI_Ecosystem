@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import neo4j from 'neo4j-driver';
 import { policyRoutes } from './routes/policy';
 import { classRoutes } from './routes/classes';
+import { attendanceRoutes } from './routes/attendance';
 
 const fastify = Fastify({
   logger: true,
@@ -26,6 +27,7 @@ fastify.decorate('neo4j', driver);
 // Register Routes
 fastify.register(policyRoutes, { prefix: '/api/academic' });
 fastify.register(classRoutes, { prefix: '/api/academic' });
+fastify.register(attendanceRoutes, { prefix: '/api/academic' });
 
 fastify.get('/api/academic/health', async (request, reply) => {
   const session = driver.session();

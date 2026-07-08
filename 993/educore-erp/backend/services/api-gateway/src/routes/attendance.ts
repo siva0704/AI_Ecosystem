@@ -1,110 +1,60 @@
-/**
- * EduCore API — Attendance Routes
- * RBAC: Teacher (POST — mark attendance for their class)
- *       Principal/HOD (GET all) 
- *       Student (GET own only)
- * RLS: tenant-scoped, date-range filtered
- */
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { rbacGuard } from '../middleware/guards';
-import { queryAttendance, appendAttendanceRecords, queryStudents } from '../db/mock-db';
-import { AttendanceRecordSchema } from '../schemas/validation';
 import { Role } from '../db/demo-users';
 
+const ACADEMIC_SERVICE_URL = process.env.ACADEMIC_SERVICE_URL || 'http://academic-service:4003';
+
 export async function attendanceRoutes(fastify: FastifyInstance) {
-  // GET /api/attendance — returns attendance records
+  // Utility to forward requests to the academic-service microservice
+  const forwardToMicroservice = async (request: FastifyRequest, reply: FastifyReply, path: string, method: string) => {
+    const user = (request as any).user;
+    
+    // Construct internal headers
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-User-Id': user.sub,
+      'X-Tenant-Id': user.tenantId,
+      'X-User-Role': user.role,
+      'X-User-Tier': String(user.tier)
+    };
+
+    try {
+      const url = new URL(`${ACADEMIC_SERVICE_URL}${path}`);
+      // Forward query params
+      Object.keys(request.query || {}).forEach(key => url.searchParams.append(key, (request.query as any)[key]));
+
+      const response = await fetch(url.toString(), {
+        method,
+        headers,
+        body: method !== 'GET' && method !== 'HEAD' ? JSON.stringify(request.body) : undefined
+      });
+
+      const data = await response.json();
+      return reply.status(response.status).send(data);
+    } catch (err: any) {
+      fastify.log.error(`Failed to reach academic-service: ${err.message}`);
+      return reply.status(502).send({ success: false, error: 'Bad Gateway: Academic service is unreachable' });
+    }
+  };
+
+  // GET /api/attendance
   fastify.get(
     '/',
     { onRequest: [fastify.authenticate] },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = (request as any).user;
-      const { date, studentId } = request.query as { date?: string; studentId?: string };
-
-      let resolvedStudentId = studentId;
-
-      // Students can only see their own attendance
-      if (user.tier >= 4) {
-        const studentsList = await queryStudents(user.tenantId);
-        const ownStudent = studentsList.find((s) => s.parent_email === user.email || s.id === user.sub);
-        resolvedStudentId = ownStudent?.id;
-      }
-
-      const records = await queryAttendance(user.tenantId, resolvedStudentId, date);
-      return reply.send({ success: true, data: records, count: records.length });
-    }
+    (request, reply) => forwardToMicroservice(request, reply, '/api/academic/attendance', 'GET')
   );
 
-  // POST /api/attendance — Teacher only
+  // POST /api/attendance
   fastify.post(
     '/',
     { onRequest: [fastify.authenticate, rbacGuard(['TEACHER', 'PRINCIPAL', 'HOD'] as Role[])] },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = (request as any).user;
-
-      const parsed = AttendanceRecordSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.status(400).send({ success: false, error: 'Validation failed', details: parsed.error.flatten() });
-      }
-
-      const { classId, date, records } = parsed.data;
-
-      // Check duplicate — can't mark the same student twice on the same date
-      const existingAll = await queryAttendance(user.tenantId, undefined, date);
-      const existing = existingAll.filter((a) => a.class_id === classId);
-
-      if (existing.length > 0) {
-        return reply.status(409).send({
-          success: false,
-          error: `Attendance for class ${classId} on ${date} has already been marked`,
-          code: 'DUPLICATE_ATTENDANCE',
-        });
-      }
-
-      const added = await appendAttendanceRecords(
-        user.tenantId,
-        records.map((r) => ({
-          class_id: classId,
-          student_id: r.studentId,
-          date,
-          status: r.status as any,
-          marked_by: user.sub,
-          note: r.note,
-        }))
-      );
-
-      fastify.log.info({
-        action: 'ATTENDANCE_MARKED',
-        classId,
-        date,
-        count: added.length,
-        by: user.sub,
-      }, 'audit');
-
-      return reply.status(201).send({
-        success: true,
-        data: added,
-        message: `Attendance marked for ${added.length} students`,
-      });
-    }
+    (request, reply) => forwardToMicroservice(request, reply, '/api/academic/attendance', 'POST')
   );
 
-  // GET /api/attendance/summary — aggregated attendance per student
+  // GET /api/attendance/summary
   fastify.get(
     '/summary',
     { onRequest: [fastify.authenticate] },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = (request as any).user;
-      const records = await queryAttendance(user.tenantId);
-
-      // Group by student
-      const summary: Record<string, { present: number; absent: number; late: number; excused: number; total: number }> = {};
-      for (const r of records) {
-        if (!summary[r.student_id]) summary[r.student_id] = { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
-        summary[r.student_id][r.status.toLowerCase() as 'present' | 'absent' | 'late' | 'excused']++;
-        summary[r.student_id].total++;
-      }
-
-      return reply.send({ success: true, data: summary });
-    }
+    (request, reply) => forwardToMicroservice(request, reply, '/api/academic/attendance/summary', 'GET')
   );
 }

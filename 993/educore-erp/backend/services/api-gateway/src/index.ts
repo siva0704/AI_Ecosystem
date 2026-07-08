@@ -24,9 +24,14 @@ import { libraryRoutes } from './routes/library';
 import { staffRoutes } from './routes/staff';
 import { academicRoutes } from './routes/academic';
 import { hrRoutes } from './routes/hr';
+import { leavesRoutes } from './routes/leaves';
 import { transportRoutesPlugin } from './routes/transport';
 import { hostelRoutesPlugin } from './routes/hostel';
 import { admissionsRoutes } from './routes/admissions';
+import { complianceRoutes } from './routes/compliance';
+import { recordsRoutes } from './routes/records';
+import { assetsRoutes } from './routes/assets';
+import { examsRoutes } from './routes/exams';
 import { auditLoggerPlugin } from './middleware/audit-logger';
 
 const fastify = Fastify({
@@ -130,9 +135,14 @@ fastify.register(libraryRoutes,     { prefix: '/api/library' });
 fastify.register(staffRoutes,       { prefix: '/api/staff' });
 fastify.register(academicRoutes,    { prefix: '/api/academic' });
 fastify.register(hrRoutes,          { prefix: '/api/hr' });
+fastify.register(leavesRoutes,      { prefix: '/api/leaves' });
 fastify.register(transportRoutesPlugin, { prefix: '/api/transport' });
 fastify.register(hostelRoutesPlugin,    { prefix: '/api/hostel' });
 fastify.register(admissionsRoutes,      { prefix: '/api/admissions' });
+fastify.register(complianceRoutes,      { prefix: '/api/compliance' });
+fastify.register(recordsRoutes,         { prefix: '/api/records' });
+fastify.register(assetsRoutes,          { prefix: '/api/assets' });
+fastify.register(examsRoutes,           { prefix: '/api/exams' });
 
 // ─── Health & Info ────────────────────────────────────────────────────────────
 fastify.get('/health', async () => ({

@@ -19,6 +19,15 @@ const OnboardStaffSchema = z.object({
   dpdpConsentGiven: z.boolean().default(false),
 });
 
+const UpdateStaffSchema = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  role: z.string().min(2).optional(),
+  department: z.string().optional(),
+});
+
 const LeaveRequestSchema = z.object({
   staffId: z.string().uuid(),
   leaveType: z.enum(['CASUAL', 'SICK', 'EARNED', 'MATERNITY', 'PATERNITY', 'UNPAID', 'OTHER']),
@@ -112,6 +121,67 @@ export async function hrRoutes(fastify: FastifyInstance) {
       if (err.code === '23505') {
         return reply.code(409).send({ success: false, error: 'Employee ID or email already exists for this tenant' });
       }
+      fastify.log.error(err);
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
+
+  // ── PATCH /api/hr/staff/:id ───────────────────────────────────────────────
+  // Update staff details
+  fastify.patch('/staff/:id', {
+    onRequest: [fastify.authenticate, rbacGuard(['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'HR_MANAGER'])],
+  }, async (request: any, reply: FastifyReply) => {
+    const tenantId = request.user.tenantId;
+    const { id } = request.params as { id: string };
+    const parsed = UpdateStaffSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: 'Invalid update data', details: parsed.error.flatten() });
+    }
+
+    try {
+      const result = await withTenantContext(tenantId, async (tx) => {
+        const [updated] = await tx.update(staff)
+          .set({
+            ...parsed.data,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(staff.id, id), eq(staff.tenantId, tenantId)))
+          .returning();
+        return updated;
+      });
+
+      if (!result) return reply.code(404).send({ success: false, error: 'Staff not found' });
+      return reply.send({ success: true, data: result });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
+
+  // ── DELETE /api/hr/staff/:id ──────────────────────────────────────────────
+  // Soft delete staff (Exit Management)
+  fastify.delete('/staff/:id', {
+    onRequest: [fastify.authenticate, rbacGuard(['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'HR_MANAGER'])],
+  }, async (request: any, reply: FastifyReply) => {
+    const tenantId = request.user.tenantId;
+    const { id } = request.params as { id: string };
+
+    try {
+      const result = await withTenantContext(tenantId, async (tx) => {
+        const [updated] = await tx.update(staff)
+          .set({
+            isActive: false,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(staff.id, id), eq(staff.tenantId, tenantId)))
+          .returning();
+        return updated;
+      });
+
+      if (!result) return reply.code(404).send({ success: false, error: 'Staff not found' });
+      return reply.send({ success: true, message: 'Staff deactivated successfully' });
+    } catch (err: any) {
       fastify.log.error(err);
       return reply.code(500).send({ success: false, error: 'Internal server error' });
     }

@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { mapUuidToShortId, mapShortIdToUuid } from '../db/mock-db';
 import { getRoleConfig } from '../middleware/rbac';
-import { DEMO_USERS } from '../db/demo-users';
+
 
 // Augment Fastify to recognise our authenticate decorator
 declare module 'fastify' {
@@ -308,17 +308,4 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // ─── GET /api/auth/demo-users ─────────────────────────────────────────────
-  fastify.get('/demo-users', async (_request: FastifyRequest, reply: FastifyReply) => {
-    const usersList = DEMO_USERS.map((u) => ({
-      email: u.email,
-      password: u.password,
-      name: u.name,
-      role: u.role,
-      tier: u.tier,
-      roleLabel: getRoleConfig(u.role).label,
-      roleColor: getRoleConfig(u.role).color,
-    }));
-    return reply.send({ success: true, users: usersList });
-  });
 }

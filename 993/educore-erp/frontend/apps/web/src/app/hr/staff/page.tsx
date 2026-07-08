@@ -25,6 +25,9 @@ export default function HRStaffDirectoryPage() {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // Edit mode state
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
 
   // New staff form state
   const [form, setForm] = useState({
@@ -104,6 +107,82 @@ export default function HRStaffDirectoryPage() {
     }
   };
 
+  const handleEdit = (staffMember: Staff) => {
+    setEditingStaffId(staffMember.id);
+    setForm({
+      firstName: staffMember.firstName,
+      lastName: staffMember.lastName,
+      email: staffMember.email,
+      phone: staffMember.phone || '',
+      role: staffMember.role,
+      department: staffMember.department || '',
+      dateOfJoining: staffMember.dateOfJoining,
+      employeeId: staffMember.employeeId,
+      dpdpConsentGiven: staffMember.dpdpConsentGiven,
+    });
+    setModalOpen(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage(null);
+
+    if (!editingStaffId) return;
+
+    try {
+      const token = localStorage.getItem('educore_token');
+      const res = await fetch(`${API_BASE}/api/hr/staff/${editingStaffId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email,
+          phone: form.phone,
+          role: form.role,
+          department: form.department,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: `Successfully updated ${form.firstName} ${form.lastName}.` });
+        setModalOpen(false);
+        setEditingStaffId(null);
+        loadStaff();
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to update staff.' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Connection failed.' });
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to deactivate ${name}? This will remove them from active directories.`)) return;
+
+    try {
+      const token = localStorage.getItem('educore_token');
+      const res = await fetch(`${API_BASE}/api/hr/staff/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: `Successfully deactivated ${name}.` });
+        loadStaff();
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to deactivate staff.' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Connection failed.' });
+    }
+  };
+
   return (
     <DashboardShell pageTitle="Staff Directory & Lifecycle" requiredRole="HR_MANAGER">
       <div className="space-y-6 max-w-6xl mx-auto fade-in-up">
@@ -120,7 +199,21 @@ export default function HRStaffDirectoryPage() {
           />
 
           <button
-            onClick={() => setModalOpen(true)}
+            onClick={() => {
+              setEditingStaffId(null);
+              setForm({
+                firstName: '',
+                lastName: '',
+                email: '',
+                phone: '',
+                role: 'TEACHER',
+                department: 'Mathematics',
+                dateOfJoining: new Date().toISOString().split('T')[0],
+                employeeId: '',
+                dpdpConsentGiven: false,
+              });
+              setModalOpen(true);
+            }}
             className="bg-pink-600 hover:bg-pink-500 text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition shadow-lg hover:shadow-pink-500/10 cursor-pointer"
           >
             ➕ Onboard New Staff
@@ -144,6 +237,7 @@ export default function HRStaffDirectoryPage() {
                   <th className="p-4">Department</th>
                   <th className="p-4">DPDP Consent</th>
                   <th className="p-4">Date Joined</th>
+                  <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -161,6 +255,12 @@ export default function HRStaffDirectoryPage() {
                       </span>
                     </td>
                     <td className="p-4">{s.dateOfJoining}</td>
+                    <td className="p-4 text-right space-x-2">
+                      <button onClick={() => handleEdit(s)} className="text-slate-400 hover:text-blue-400 transition cursor-pointer">Edit</button>
+                      {s.isActive && (
+                        <button onClick={() => handleDelete(s.id, `${s.firstName} ${s.lastName}`)} className="text-slate-400 hover:text-red-400 transition cursor-pointer">Deactivate</button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -173,11 +273,11 @@ export default function HRStaffDirectoryPage() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
             <div className="glass max-w-lg w-full rounded-2xl p-6 border border-slate-700/80 space-y-4">
               <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                <h3 className="text-white font-bold text-base">New Employee Onboard</h3>
+                <h3 className="text-white font-bold text-base">{editingStaffId ? 'Update Employee' : 'New Employee Onboard'}</h3>
                 <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-white text-lg font-bold">✕</button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={editingStaffId ? handleUpdate : handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-slate-400 text-xs mb-1">First Name</label>
@@ -253,9 +353,10 @@ export default function HRStaffDirectoryPage() {
                     <input
                       type="text"
                       required
+                      disabled={!!editingStaffId}
                       value={form.employeeId}
                       onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-pink-500"
+                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-pink-500 disabled:opacity-50"
                       placeholder="EMP-055"
                     />
                   </div>
@@ -268,9 +369,10 @@ export default function HRStaffDirectoryPage() {
                   </div>
                   <input
                     type="checkbox"
+                    disabled={!!editingStaffId}
                     checked={form.dpdpConsentGiven}
                     onChange={(e) => setForm({ ...form, dpdpConsentGiven: e.target.checked })}
-                    className="w-4 h-4 rounded text-pink-600 focus:ring-pink-500"
+                    className="w-4 h-4 rounded text-pink-600 focus:ring-pink-500 disabled:opacity-50"
                   />
                 </div>
 
@@ -286,7 +388,7 @@ export default function HRStaffDirectoryPage() {
                     type="submit"
                     className="bg-pink-600 hover:bg-pink-500 text-white px-5 py-2 rounded-xl text-xs font-semibold cursor-pointer"
                   >
-                    Complete Onboard
+                    {editingStaffId ? 'Save Changes' : 'Complete Onboard'}
                   </button>
                 </div>
               </form>

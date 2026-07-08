@@ -21,10 +21,14 @@ interface Book {
 
 interface Transaction {
   id: string;
-  book_id: string;
-  student_id: string;
-  due_date: string;
+  bookId: string;
+  studentId: string;
+  dueDate: string;
   status: 'ISSUED' | 'RETURNED' | 'OVERDUE';
+  bookTitle?: string;
+  studentFirstName?: string;
+  studentLastName?: string;
+  rollNumber?: string;
 }
 
 export default function LibraryTransactionsPage() {
@@ -52,21 +56,21 @@ export default function LibraryTransactionsPage() {
         const token = localStorage.getItem('educore_token');
         
         // Books
-        const bRes = await fetch(`http://localhost:4000/api/library/books?search=${searchBook}`, {
+        const bRes = await fetch(`${API_BASE}/api/library/books?search=${searchBook}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const bData = await bRes.json();
         if (bData.success) setBooks(bData.data);
 
         // Students
-        const sRes = await fetch(`http://localhost:4000/api/students?limit=20&search=${searchStudent}`, {
+        const sRes = await fetch(`${API_BASE}/api/students?limit=20&search=${searchStudent}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const sData = await sRes.json();
         if (sData.success) setStudents(sData.data);
 
         // Transactions
-        const tRes = await fetch('http://localhost:4000/api/library/transactions', {
+        const tRes = await fetch(`${API_BASE}/api/library/transactions`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const tData = await tRes.json();
@@ -86,7 +90,7 @@ export default function LibraryTransactionsPage() {
 
     try {
       const token = localStorage.getItem('educore_token');
-      const res = await fetch('http://localhost:4000/api/library/issue', {
+      const res = await fetch(`${API_BASE}/api/library/issue`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -105,7 +109,7 @@ export default function LibraryTransactionsPage() {
         setSelectedBook(null);
         setSelectedStudent(null);
         // Refresh transactions list
-        const updated = await fetch('http://localhost:4000/api/library/transactions', {
+        const updated = await fetch(`${API_BASE}/api/library/transactions`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const updatedData = await updated.json();
@@ -126,7 +130,7 @@ export default function LibraryTransactionsPage() {
 
     try {
       const token = localStorage.getItem('educore_token');
-      const res = await fetch(`http://localhost:4000/api/library/return/${txnId}`, {
+      const res = await fetch(`${API_BASE}/api/library/return/${txnId}`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -137,7 +141,7 @@ export default function LibraryTransactionsPage() {
       if (data.success) {
         setMessage({ type: 'success', text: 'Book returned successfully to inventory.' });
         // Refresh transactions list
-        const updated = await fetch('http://localhost:4000/api/library/transactions', {
+        const updated = await fetch(`${API_BASE}/api/library/transactions`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const updatedData = await updated.json();
@@ -242,8 +246,8 @@ export default function LibraryTransactionsPage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-850 text-slate-400 text-xs uppercase">
-                    <th className="py-2.5">Book ID</th>
-                    <th className="py-2.5">Borrower ID</th>
+                    <th className="py-2.5">Book Title</th>
+                    <th className="py-2.5">Borrower</th>
                     <th className="py-2.5">Due Date</th>
                     <th className="py-2.5">Status</th>
                     <th className="py-2.5 text-right">Actions</th>
@@ -252,9 +256,9 @@ export default function LibraryTransactionsPage() {
                 <tbody className="divide-y divide-slate-800/60">
                   {transactions.map((txn) => (
                     <tr key={txn.id} className="text-xs text-slate-300 hover:bg-slate-900/10">
-                      <td className="py-3 font-mono text-[11px] truncate max-w-[100px]">{txn.book_id}</td>
-                      <td className="py-3 font-mono text-[11px] truncate max-w-[100px]">{txn.student_id}</td>
-                      <td className="py-3">{txn.due_date}</td>
+                      <td className="py-3 font-medium text-slate-200 truncate max-w-[150px]">{txn.bookTitle || txn.bookId}</td>
+                      <td className="py-3 font-medium text-slate-200 truncate max-w-[150px]">{txn.studentFirstName} {txn.studentLastName} ({txn.rollNumber})</td>
+                      <td className="py-3">{txn.dueDate}</td>
                       <td className="py-3">
                         <span className={`px-2 py-0.5 rounded-full font-semibold text-[10px] ${
                           txn.status === 'RETURNED' ? 'bg-green-500/20 text-green-400' : txn.status === 'OVERDUE' ? 'bg-red-500/20 text-red-400' : 'bg-violet-500/20 text-violet-400'
